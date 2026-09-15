@@ -1,0 +1,38 @@
+name: Verify pilot
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install report fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
+      - name: Reproduce setup and build documents
+        run: bash .hoplite/setup.sh
+      - name: Verify frontend components
+        run: npm --prefix frontend test
+      - name: Verify API, queue, documents and app composition
+        run: .venv/bin/python -m pytest -q
+      - name: Replay 10,000 synthetic events twice
+        run: .venv/bin/python -m scripts.stress_synthetic --records 10000
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evidence-deliverables
+          path: deliverables/
+          retention-days: 7

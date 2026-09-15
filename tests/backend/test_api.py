@@ -1,7 +1,10 @@
 import importlib
+import csv
+import io
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -96,7 +99,7 @@ def test_default_database_is_local_and_import_does_not_create_it(tmp_path, monke
     root = Path(__file__).resolve().parents[2]
     environment = os.environ | {"PYTHONPATH": str(root), "ITLES_DB_PATH": ".local/itles.sqlite3"}
     completed = subprocess.run(
-        [sys.executable, "-c", "import backend.app"], cwd=tmp_path, env=environment,
+        [sys.executable, "-c", "import backend.app; import server"], cwd=tmp_path, env=environment,
         capture_output=True, text=True, check=False,
     )
     assert completed.returncode == 0, completed.stderr
@@ -117,7 +120,7 @@ def test_login_checks_dummy_hash_and_throttles_by_hashed_account_only(api, monke
     for _ in range(5):
         assert api.post("/api/auth/login", json={"account": missing_account, "password": "correct-secret"}).status_code == 401
     assert api.post("/api/auth/login", json={"account": missing_account, "password": "correct-secret"}).status_code == 429
-    assert checked == [app_module.DUMMY_PASSWORD_HASH] * 6
+    assert checked == [app_module.DUMMY_PASSWORD_HASH] * 5
     assert missing_account not in app_module.LOGIN_LIMITER._records
     assert all(len(key) == 64 for key in app_module.LOGIN_LIMITER._records)
 
@@ -151,7 +154,7 @@ def test_late_telemetry_does_not_regress_latest_value(api):
     login(api)
     metrics = {metric["key"]: metric for metric in api.get("/api/machines").json()["machines"][0]["metrics"]}
     assert metrics["fuel_level_pct"]["value"] == 35.0
-    assert metrics["fuel_level_pct"]["observed_at"] == "2026-01-10T12:00:00Z"
+    assert metrics["fuel_level_pct"]["observed_at"] == "2026-01-10T12:00:00.000000Z"
     assert metrics["engine_rpm"]["value"] is None
     assert metrics["engine_rpm"]["status"] == "missing"
 
@@ -200,7 +203,8 @@ def test_fleet_dates_are_inclusive_and_totals_are_exact(api):
     assert api.get("/api/fleet?start=2026-W01&end=2026-01-10").status_code == 422
     ledger_rows = api.get("/api/exports/ledger.csv?start=2026-01-10&end=2026-01-10").text.splitlines()
     assert len(ledger_rows) == 3
-    assert all("9.000000" not in row for row in ledger_rows)
+    ledger = list(csv.DictReader(io.StringIO("\n".join(ledger_rows))))
+    assert [row["volume_m3"] for row in ledger] == ["0.000001", "2.500000"]
 
 
 def test_unknown_method_version_is_preserved_and_warned(api):
@@ -266,3 +270,136 @@ def test_engine_hour_counter_decrease_makes_period_value_unavailable(api):
     fleet = api.get("/api/fleet?start=2026-01-10&end=2026-01-10").json()
     assert fleet["machines"][0]["engine_hours"] is None
     assert any("уменьшение счётчика моточасов" in item for item in api.get("/api/quality").json()["limitations"])
+
+
+def test_simultaneous_retries_accept_only_one_copy(api):
+    packet = [event("org-a-machine", volume_m3="0.123456")]
+    batch_id = str(uuid4())
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        responses = list(pool.map(lambda _: ingest(api, packet, batch_id), range(24)))
+    assert all(response.status_code == 200 for response in responses)
+    assert sum(response.json()["accepted"] for response in responses) == 1
+    assert sum(response.json()["duplicates"] for response in responses) == 23
+    login(api)
+    result = api.get("/api/fleet?start=2026-01-10&end=2026-01-10").json()
+    assert result["record_count"] == 1
+    assert result["totals"][0]["volume_m3"] == "0.123456"
+
+
+def test_subsecond_ordering_and_last_microsecond_period_boundary(api):
+    first = event("org-a-machine", kind="telemetry", occurred_at="2026-01-10T12:00:00.100001Z")
+    later = event("org-a-machine", kind="telemetry", occurred_at="2026-01-10T12:00:00.900001Z", measurements=[{"key": "fuel_level_pct", "value": 70, "unit": "%"}])
+    final = event("org-a-machine", occurred_at="2026-01-10T23:59:59.999999Z", volume_m3="1.000001")
+    next_day = event("org-a-machine", occurred_at="2026-01-11T00:00:00Z")
+    assert ingest(api, [later, first, final, next_day]).status_code == 200
+    login(api)
+    detail = api.get("/api/machines/org-a-machine?start=2026-01-10&end=2026-01-10").json()
+    fuel = next(item for item in detail["metrics"] if item["key"] == "fuel_level_pct")
+    assert fuel["value"] == 70
+    assert fuel["observed_at"] == "2026-01-10T12:00:00.900001Z"
+    assert len(detail["production"]) == 1
+    assert detail["production"][0]["occurred_at"] == "2026-01-10T23:59:59.999999Z"
+    assert detail["totals"][0]["volume_m3"] == "1.000001"
+    conflict = ingest(api, [later | {"occurred_at": "2026-01-10T12:00:00.900002Z"}])
+    assert conflict.status_code == 409
+
+
+def test_metric_contract_does_not_invent_oem_operating_norms(api):
+    measurements = [
+        {"key": "engine_rpm", "value": 6000, "unit": "rpm"},
+        {"key": "engine_oil_temperature_c", "value": 300, "unit": "°C"},
+        {"key": "fuel_rate_lph", "value": 15.25, "unit": "L/h"},
+        {"key": "fuel_consumed_total_l", "value": 180.0, "unit": "L"},
+        {"key": "engine_oil_level_pct", "value": 45, "unit": "%"},
+    ]
+    assert ingest(api, [event("org-a-machine", kind="telemetry", measurements=measurements)]).status_code == 200
+    login(api)
+    detail = api.get("/api/machines/org-a-machine").json()
+    values = {metric["key"]: metric for metric in detail["metrics"]}
+    assert values["engine_rpm"]["value"] == 6000
+    assert all(metric["norm"] is None for metric in values.values())
+    assert values["hydraulic_oil_level_pct"]["status"] == "missing"
+    invalid = event("org-a-machine", kind="telemetry", measurements=[{"key": "fuel_level_pct", "value": 101, "unit": "%"}])
+    assert ingest(api, [invalid]).status_code == 422
+
+
+def test_full_app_factory_has_no_database_side_effect(tmp_path):
+    path = tmp_path / "new-folder" / "pilot.db"
+    app = create_app(str(path))
+    assert not path.exists()
+    assert TestClient(app).get("/api/health").status_code == 200
+    assert path.exists()
+
+
+def test_complete_outbox_api_ledger_chain_recovers_after_lost_ack(api, tmp_path):
+    from edge.outbox import Outbox
+
+    payload = {"schema_version": 1, "batch_id": str(uuid4()), "events": [
+        event("org-a-machine", volume_m3="0.000001"),
+        event("org-a-machine", volume_m3="12.345678"),
+    ]}
+    queue_path = tmp_path / "edge.sqlite3"
+    queue = Outbox(queue_path)
+    queue.enqueue(payload)
+
+    def lose_ack(packet):
+        response = api.post("/api/ingest", headers={"Authorization": "Bearer token-org-a"}, json=packet)
+        assert response.status_code == 200
+        raise OSError("simulated lost response after server commit")
+
+    assert queue.flush(lose_ack)["pending"] == 1
+    queue.close()
+    queue = Outbox(queue_path)
+    try:
+        def transport(packet):
+            response = api.post("/api/ingest", headers={"Authorization": "Bearer token-org-a"}, json=packet)
+            assert response.json()["accepted"] == 0
+            assert response.json()["duplicates"] == 2
+            return response.status_code, response.json()
+
+        assert queue.flush(transport) == {"pending": 0, "sent": 1, "quarantined": 0}
+        assert queue.db.execute("SELECT payload FROM outbox").fetchone()[0] is None
+    finally:
+        queue.close()
+    login(api)
+    fleet = api.get("/api/fleet?start=2026-01-10&end=2026-01-10").json()
+    ledger = list(csv.DictReader(io.StringIO(api.get("/api/exports/ledger.csv?start=2026-01-10&end=2026-01-10").text)))
+    from decimal import Decimal
+
+    assert fleet["record_count"] == len(ledger) == 2
+    assert sum(Decimal(row["volume_m3"]) for row in ledger) == Decimal(fleet["totals"][0]["volume_m3"]) == Decimal("12.345679")
+
+
+def test_empty_date_is_rejected_and_mixed_methods_are_disclosed(api):
+    assert ingest(api, [event("org-a-machine"), event("org-a-machine", method_version="other-v2")]).status_code == 200
+    login(api)
+    assert api.get("/api/fleet?start=&end=").status_code == 422
+    totals = api.get("/api/fleet?start=2026-01-10&end=2026-01-10").json()["totals"]
+    assert any("сопоставимость методик не подтверждена" in warning for warning in totals[0]["warnings"])
+
+
+def test_demo_stays_labelled_and_does_not_refresh_fixture_timestamps(api, monkeypatch):
+    monkeypatch.setenv("ITLES_DEMO_ENABLED", "1")
+    response = api.post("/api/auth/demo")
+    assert response.status_code == 200
+    session = response.json()
+    assert session["demo"] is True
+    assert session["data_period"]["start"] <= session["data_period"]["end"]
+    original = api.get("/api/machines").json()["machines"]
+    assert len(original) == 3
+    assert api.post("/api/auth/logout").status_code == 200
+    assert api.post("/api/auth/demo").status_code == 200
+    assert api.get("/api/auth/me").json() == session
+    assert api.get("/api/machines").json()["machines"] == original
+
+
+@pytest.mark.parametrize("timestamp", [1768046400, "2026-01-10T12:00:00.1234567Z", "2026-01-10T12:00:00", "2026-01-10T15:00:00+03:00"])
+def test_timestamps_are_not_guessed_or_silently_truncated(api, timestamp):
+    assert ingest(api, [event("org-a-machine", occurred_at=timestamp)]).status_code == 422
+
+
+def test_schema_version_does_not_coerce_boolean(api):
+    response = api.post("/api/ingest", headers={"Authorization": "Bearer token-org-a"}, json={
+        "schema_version": True, "batch_id": str(uuid4()), "events": [event("org-a-machine")],
+    })
+    assert response.status_code == 422

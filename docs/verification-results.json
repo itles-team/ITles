@@ -1,0 +1,53 @@
+{
+  "verified_at_utc": "2026-09-15T22:25:21+00:00",
+  "source_fingerprint": "2b80df02eafc2c3b821474761d3b23fafd00ebac408b369c858181004b120210",
+  "evidence_level": "synthetic_and_documentary_only",
+  "setup": {
+    "command": "bash .hoplite/setup.sh",
+    "result": "passed_when_executed_in_shell",
+    "managed_setup": "blocked_by_platform_lifecycle_lease"
+  },
+  "python": {
+    "command": ".venv/bin/python -m pytest -q",
+    "passed": 54,
+    "failed": 0,
+    "warnings": [
+      "Starlette TestClient httpx deprecation",
+      "AnyIO BlockingPortal alias deprecation"
+    ],
+    "scope": "API/SQLite/outbox/deliverables and built asset serving via in-process ASGI TestClient"
+  },
+  "frontend": {
+    "build_command": "npm --prefix frontend run build",
+    "build": "passed",
+    "test_command": "npm --prefix frontend test",
+    "component_tests_passed": 12,
+    "scope": "jsdom, mocked fetch and Leaflet; not a real-browser or visual verification"
+  },
+  "stress": {
+    "status": "passed",
+    "evidence": "synthetic_in_process_not_network_or_field",
+    "records": 10000,
+    "duplicate_deliveries": 10000,
+    "total_m3": "1234.560000",
+    "ingest_and_retries_seconds": 1.019,
+    "fleet_query_seconds": 0.052
+  },
+  "dependency_audits": {
+    "pip_audit_known_vulnerabilities": 0,
+    "npm_audit_all_dependencies_known_vulnerabilities": 0,
+    "limitation": "Point-in-time advisory checks, not proof of complete security"
+  },
+  "browser": {
+    "status": "blocked",
+    "observed_error": "net::ERR_CONNECTION_REFUSED",
+    "managed_preview": "Returns old crashed run from 2026-09-15T21:39:57Z without starting a new command",
+    "repository_config": "Corrected to version 1 and enabled/command script objects; project_settings_get recognizes both scripts",
+    "recovery": "Reported to platform; sandbox_setup blocked by lifecycle lease; sandbox_restart unavailable",
+    "visual_acceptance": "not_performed"
+  },
+  "real_oem_files": "not_provided_not_tested",
+  "physical_machine": "not_connected_not_field_tested",
+  "one_c": "design_only_no_customer_configuration_connected",
+  "production_deployment": "not_performed"
+}

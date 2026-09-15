@@ -1,10 +1,10 @@
 {
+  "version": 1,
   "scripts": {
-    "setup": "bash .hoplite/setup.sh",
-    "run": "bash .hoplite/run.sh"
+    "setup": {"enabled": true, "command": "bash .hoplite/setup.sh"},
+    "run": {"enabled": true, "command": "bash .hoplite/run.sh"}
   },
   "ports": {
     "preview": 3000
   }
 }
-

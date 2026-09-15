@@ -99,7 +99,7 @@ class IngestSizeLimitMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope["path"] != "/api/ingest":
+        if scope["type"] != "http" or scope["path"] not in {"/api/ingest", "/api/auth/login"}:
             await self.app(scope, receive, send)
             return
 
@@ -133,7 +133,7 @@ class IngestSizeLimitMiddleware:
 
 def _date_range(start: str | None, end: str | None) -> tuple[date, date]:
     try:
-        if (start and not DATE_PATTERN.fullmatch(start)) or (end and not DATE_PATTERN.fullmatch(end)):
+        if (start is not None and not DATE_PATTERN.fullmatch(start)) or (end is not None and not DATE_PATTERN.fullmatch(end)):
             raise ValueError
         start_date = date.fromisoformat(start) if start else utcnow().date()
         end_date = date.fromisoformat(end) if end else start_date
@@ -216,6 +216,8 @@ def _totals(conn: sqlite3.Connection, organization_id: str, start: date, end: da
         warnings = []
         if "unknown" in provenance["method_versions"]:
             warnings.append("Есть записи с неизвестной версией метода; они не подтверждают физическую точность объёма.")
+        if len(provenance["methods"]) > 1 or len(provenance["method_versions"]) > 1:
+            warnings.append("В итоге смешаны методы или версии расчёта. Сумма арифметическая; сопоставимость методик не подтверждена.")
         results.append({"basis": row["basis"], "volume_m3": _decimal(row["volume"]), "records": row["records"],
                         "provenance": provenance, "warnings": warnings})
     return results
@@ -257,12 +259,20 @@ def create_app(db_path: str | None = None) -> FastAPI:
     app = FastAPI(title="ITles telemetry API", version="1.0", docs_url=None, redoc_url=None)
     app.add_middleware(IngestSizeLimitMiddleware)
     app.state.db_path = db_path or default_db_path()
-    conn = connect(app.state.db_path)
-    initialize(conn)
-    conn.close()
+    init_lock = threading.Lock()
+    initialized = False
 
     @contextmanager
     def db() -> Iterator[sqlite3.Connection]:
+        nonlocal initialized
+        with init_lock:
+            if not initialized:
+                connection = connect(app.state.db_path)
+                try:
+                    initialize(connection)
+                finally:
+                    connection.close()
+                initialized = True
         current = connect(app.state.db_path)
         try:
             yield current
@@ -330,26 +340,35 @@ def create_app(db_path: str | None = None) -> FastAPI:
         response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict",
                             secure=os.getenv("ITLES_COOKIE_SECURE", "1") == "1", max_age=7 * 86400, path="/")
 
+    def session_payload(row: dict | sqlite3.Row) -> dict:
+        result = {"organization": {"id": row["id"], "name": row["name"]}, "demo": bool(row["is_demo"])}
+        if row["is_demo"]:
+            with db() as conn:
+                period = conn.execute("SELECT MIN(occurred_at) first,MAX(occurred_at) last FROM events WHERE organization_id=?", (row["id"],)).fetchone()
+            if period["first"]:
+                result["data_period"] = {"start": period["first"][:10], "end": period["last"][:10]}
+        return result
+
     @app.get("/api/health")
     def health():
+        with db() as conn:
+            conn.execute("SELECT 1").fetchone()
         return {"status": "ok"}
 
     @app.post("/api/auth/login")
     def login(payload: LoginRequest, response: Response):
+        if not LOGIN_LIMITER.allowed(payload.account):
+            raise HTTPException(429, "too many login attempts; try again later")
         with db() as conn:
             row = conn.execute("SELECT id,name,is_demo,password_hash FROM organizations WHERE account=? AND is_demo=0", (payload.account,)).fetchone()
         # An unknown account gets the same expensive password operation as a known one.
         valid_password = password_matches(payload.password, row["password_hash"] if row else DUMMY_PASSWORD_HASH)
-        if not LOGIN_LIMITER.allowed(payload.account):
-            raise HTTPException(429, "too many login attempts; try again later")
         if not row or not valid_password:
             LOGIN_LIMITER.failed(payload.account)
             raise HTTPException(401, "invalid account or password")
         LOGIN_LIMITER.succeeded(payload.account)
-        with db() as conn:
-            org_id = row["id"]
-        set_session(response, org_id, is_demo=False)
-        return {"organization": {"id": row["id"], "name": row["name"]}, "demo": bool(row["is_demo"])}
+        set_session(response, row["id"], is_demo=False)
+        return session_payload(row)
 
     @app.post("/api/auth/demo")
     def demo_login(response: Response):
@@ -358,14 +377,15 @@ def create_app(db_path: str | None = None) -> FastAPI:
         if not DEMO_LOGIN_LIMITER.allowed():
             raise HTTPException(429, "demo session limit reached; try again later")
         with db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             org_id = seed_demo(conn)
             row = conn.execute("SELECT id,name,is_demo FROM organizations WHERE id=?", (org_id,)).fetchone()
         set_session(response, org_id, is_demo=True)
-        return {"organization": {"id": row["id"], "name": row["name"]}, "demo": bool(row["is_demo"])}
+        return session_payload(row)
 
     @app.get("/api/auth/me")
     def me(session: dict = Depends(current_session)):
-        return {"organization": {"id": session["id"], "name": session["name"]}, "demo": bool(session["is_demo"])}
+        return session_payload(session)
 
     @app.post("/api/auth/logout")
     def logout(response: Response, itles_session: str | None = Cookie(default=None)):
@@ -423,6 +443,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         normalized = batch.model_dump(mode="json")
         batch_hash, _ = canonical_hash(normalized)
         with db() as conn:
+            conn.execute("BEGIN IMMEDIATE")
             batch_row = conn.execute("SELECT payload_hash FROM ingest_batches WHERE organization_id=? AND machine_id=? AND batch_id=?", (identity["organization_id"], identity["machine_id"], str(batch.batch_id))).fetchone()
             if batch_row:
                 if batch_row["payload_hash"] != batch_hash:

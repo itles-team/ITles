@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
+import math
+import re
 from typing import Annotated, Literal
 from uuid import UUID
 
@@ -12,14 +14,19 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-METRICS: dict[str, tuple[str, str, float, float]] = {
+METRICS: dict[str, tuple[str, str, float | None, float | None]] = {
     "fuel_level_pct": ("Уровень топлива", "%", 0, 100),
-    "engine_oil_pressure_kpa": ("Давление масла двигателя", "kPa", 0, 3000),
-    "engine_oil_temperature_c": ("Температура масла двигателя", "°C", -80, 250),
-    "hydraulic_oil_temperature_c": ("Температура гидравлического масла", "°C", -80, 250),
-    "coolant_temperature_c": ("Температура охлаждающей жидкости", "°C", -80, 200),
-    "engine_rpm": ("Обороты двигателя", "rpm", 0, 5000),
-    "engine_hours_total": ("Наработка двигателя", "h", 0, 10_000_000),
+    "fuel_rate_lph": ("Текущий расход топлива", "L/h", 0, None),
+    "fuel_consumed_total_l": ("Счётчик израсходованного топлива", "L", 0, None),
+    "engine_oil_pressure_kpa": ("Давление масла двигателя", "kPa", 0, None),
+    "engine_oil_temperature_c": ("Температура масла двигателя", "°C", None, None),
+    "engine_oil_level_pct": ("Уровень масла двигателя", "%", 0, 100),
+    "hydraulic_oil_temperature_c": ("Температура гидравлического масла", "°C", None, None),
+    "hydraulic_oil_level_pct": ("Уровень гидравлического масла", "%", 0, 100),
+    "chain_oil_level_pct": ("Уровень масла пильной цепи", "%", 0, 100),
+    "coolant_temperature_c": ("Температура охлаждающей жидкости", "°C", None, None),
+    "engine_rpm": ("Обороты двигателя", "rpm", 0, None),
+    "engine_hours_total": ("Счётчик наработки двигателя", "h", 0, None),
 }
 SOURCES = {"onboard_measurement", "operator_export", "accounting_import"}
 METHODS = {"harvester_onboard", "merchantable_log", "manual_ledger"}
@@ -31,7 +38,7 @@ def utc_timestamp(value: datetime) -> datetime:
         raise ValueError("occurred_at must use UTC (Z or +00:00)")
     if value > datetime.now(UTC) + timedelta(minutes=5):
         raise ValueError("occurred_at cannot be in the future")
-    return value.astimezone(UTC).replace(microsecond=0)
+    return value.astimezone(UTC)
 
 
 class Position(StrictModel):
@@ -49,6 +56,8 @@ class Measurement(StrictModel):
     key: Literal[
         "fuel_level_pct", "engine_oil_pressure_kpa", "engine_oil_temperature_c",
         "hydraulic_oil_temperature_c", "coolant_temperature_c", "engine_rpm", "engine_hours_total",
+        "fuel_rate_lph", "fuel_consumed_total_l", "engine_oil_level_pct",
+        "hydraulic_oil_level_pct", "chain_oil_level_pct",
     ]
     value: StrictFloat | StrictInt
     unit: str = Field(min_length=1, max_length=8)
@@ -58,7 +67,11 @@ class Measurement(StrictModel):
         _, expected_unit, low, high = METRICS[self.key]
         if self.unit != expected_unit:
             raise ValueError(f"{self.key} must use {expected_unit}")
-        if not low <= self.value <= high:
+        try:
+            finite = math.isfinite(self.value)
+        except OverflowError:
+            finite = False
+        if not finite or (low is not None and self.value < low) or (high is not None and self.value > high):
             raise ValueError(f"{self.key} is outside accepted range")
         return self
 
@@ -68,6 +81,13 @@ class EventBase(StrictModel):
     machine_id: str = Field(min_length=1, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     occurred_at: datetime
     kind: str
+
+    @field_validator("occurred_at", mode="before")
+    @classmethod
+    def explicit_utc_string(cls, value):
+        if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)", value):
+            raise ValueError("occurred_at must be an explicit UTC timestamp with at most six fractional digits")
+        return value
 
     @field_validator("occurred_at")
     @classmethod
@@ -124,6 +144,13 @@ class IngestBatch(StrictModel):
     batch_id: UUID
     events: list[Event] = Field(min_length=1, max_length=500)
 
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def integer_schema_version(cls, value):
+        if type(value) is not int or value != 1:
+            raise ValueError("schema_version must be the integer 1")
+        return value
+
     @model_validator(mode="after")
     def unique_event_ids(self):
         ids = [str(event.event_id) for event in self.events]
@@ -135,4 +162,3 @@ class IngestBatch(StrictModel):
 class LoginRequest(StrictModel):
     account: str = Field(min_length=2, max_length=80, pattern=r"^[A-Za-z0-9_-]+$")
     password: str = Field(min_length=12, max_length=256)
-

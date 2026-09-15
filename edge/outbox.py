@@ -100,11 +100,15 @@ class Outbox:
                 self._result(batch_id, "pending", "transport_unavailable")
                 break
             if 200 <= status < 300:
+                if not isinstance(receipt, dict):
+                    self._result(batch_id, "pending", "invalid_acknowledgement")
+                    break
                 accepted, duplicates = receipt.get("accepted"), receipt.get("duplicates")
                 valid_receipt = (
                     str(receipt.get("batch_id")) == batch_id
                     and type(accepted) is int and type(duplicates) is int
                     and accepted >= 0 and duplicates >= 0
+                    and receipt.get("rejected", 0) == 0
                     and accepted + duplicates == len(payload["events"])
                 )
                 if valid_receipt:
@@ -131,7 +135,7 @@ class Outbox:
 
 def http_transport(base_url: str, token: str) -> Transport:
     url = parse.urlsplit(base_url)
-    if url.username or url.password or url.query or url.fragment or url.path not in ("", "/"):
+    if not url.hostname or url.username or url.password or url.query or url.fragment or url.path not in ("", "/"):
         raise ValueError("Укажите origin сервера без пути, параметров и пароля")
     if url.scheme != "https" and not (url.scheme == "http" and url.hostname in ("localhost", "127.0.0.1", "::1")):
         raise ValueError("Требуется HTTPS; HTTP разрешён только для локального теста")

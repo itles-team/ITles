@@ -12,7 +12,7 @@ def utcnow() -> datetime:
 
 
 def iso(value: datetime) -> str:
-    return value.astimezone(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
 def connect(path: str) -> sqlite3.Connection:
@@ -85,6 +85,15 @@ def initialize(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE production ADD COLUMN method_version TEXT NOT NULL DEFAULT 'unknown'")
     if "calibration_ref" not in production_columns:
         conn.execute("ALTER TABLE production ADD COLUMN calibration_ref TEXT")
+    # Fixed precision keeps chronological TEXT ordering valid across old and new rows.
+    for table, columns in {
+        "device_tokens": ("created_at",), "sessions": ("expires_at",),
+        "ingest_batches": ("received_at",), "events": ("occurred_at", "received_at"),
+        "measurements": ("observed_at",), "positions": ("observed_at",),
+        "production": ("occurred_at",), "ingest_audit": ("received_at",),
+    }.items():
+        for column in columns:
+            conn.execute(f"UPDATE {table} SET {column}=substr({column},1,19)||'.000000Z' WHERE length({column})=20 AND {column} LIKE '%Z'")
     conn.commit()
 
 
@@ -119,4 +128,3 @@ def new_id() -> str:
 
 def default_db_path() -> str:
     return os.getenv("ITLES_DB_PATH", ".local/itles.sqlite3")
-

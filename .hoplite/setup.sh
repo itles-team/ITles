@@ -6,4 +6,3 @@ python3 -m venv .venv
 npm --prefix frontend ci --no-audit --no-fund
 npm --prefix frontend run build
 .venv/bin/python scripts/build_deliverables.py
-

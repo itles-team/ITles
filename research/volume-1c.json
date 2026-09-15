@@ -249,7 +249,7 @@
     {
       "field": "source_message_id plus source_record_id plus source_hash",
       "target": "Source-provenance attributes and audit register",
-      "transformation": "Use source_message_id plus source_record_id as immutable identity; store source_hash separately for the projected payload.",
+      "transformation": "Use source_kind plus stable logical source_message_id plus source_record_id as immutable identity; store source_hash separately. A new filename or export hash must not create a new product identity; snapshot reconciliation needs a source-specific adapter.",
       "validation": "A same-identity/same-hash replay is idempotent; a same-identity/different-hash delivery enters conflict quarantine and never creates a second volume.",
       "status": "proposed; raw HPR is processed only in an approved customer-local isolated processor and is not uploaded to the cloud app",
       "sources": "V01; V05; V06"

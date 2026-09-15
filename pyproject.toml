@@ -2,4 +2,3 @@
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-ra"
-

@@ -23,12 +23,14 @@ bash .hoplite/run.sh
 
 ```sh
 .venv/bin/python -m pytest -q
+npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python scripts/build_deliverables.py
+.venv/bin/python -m scripts.stress_synthetic --records 10000
 ```
 
 Документы создаются в `deliverables/`: Excel с источниками, отчёт DOCX/PDF,
-Markdown и ZIP исходников. Их можно скачать со страницы «Документы».
+Markdown и ZIP исходников. Их можно скачать из раздела «Исследования».
 Исходная пользовательская книга `harvesters_rf.xlsx` не перераспространяется;
 её утверждения рассмотрены отдельно и не приняты за проверенные факты.
 

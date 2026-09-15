@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 import re
 import textwrap
@@ -72,6 +73,14 @@ def make_workbook(evidence):
                          {"name": "Комплектация", "result": "Возможность в документации производителя не доказывает наличие, исправность и доступность данных на конкретном серийном номере.", "status": "Требуется проверка конфигурации"},
                          {"name": "Персональные данные", "result": "Контакты людей и данные операторов не включены. Реальная геолокация вместе со сменным графиком может стать персональной.", "status": "Требуется согласование до пилота"},
                          {"name": "Дата проверки", "result": DATE, "status": "Даты публикаций указаны отдельно"}]),
+        ("Уровни доказательности", [
+            {"name": "Подтверждено документацией", "result": "Возможность изделия описана в указанном первичном источнике. Не означает оснащённость, исправность или доступность интерфейса конкретной машины.", "status": "Исследовано"},
+            {"name": "Спроектировано", "result": "Архитектура OEM-адаптера, схема сверки, программа пилота и обмен с согласуемой конфигурацией 1С.", "status": "Не подключено"},
+            {"name": "Реализовано", "result": "Код нормализованного приёмника, очереди, БД, расчётов и интерфейса. Сам факт наличия кода не доказывает правильность.", "status": "См. реестр проверки в отчёте"},
+            {"name": "Проверено синтетически", "result": "Автоматические тесты специально составленных событий. Фактические команды и результаты фиксируются отдельно в отчёте.", "status": "Не метрологическое испытание"},
+            {"name": "Проверено на реальных OEM-файлах", "result": "Эталонные HPR/StanForD-файлы и сырая телеметрия заказчика не предоставлены.", "status": "Не выполнено"},
+            {"name": "Проверено в поле", "result": "Доступа к физическому харвестеру, датчикам и приёмке древесины не было.", "status": "Не выполнено"},
+        ]),
     ]
     mapping = [
         ("Конфигурации", "configurations"), ("Параметры и датчики", "metrics"),
@@ -121,7 +130,7 @@ def make_workbook(evidence):
                 cell.font = Font(name="Calibri", size=11, bold=cell.row == 3, color="173D34")
                 width = ws.column_dimensions[cell.column_letter].width
                 estimated_lines = max(estimated_lines, sum(max(1, len(line) // int(width - 2) + 1) for line in str(cell.value or "").splitlines()))
-                if str(cell.value).startswith("https://"):
+                if str(cell.value).startswith(("https://", "http://")):
                     cell.hyperlink = cell.value
                     cell.font = Font(name="Calibri", size=11, color="146F8A", underline="single")
             ws.row_dimensions[row[0].row].height = min(400, max(32, estimated_lines * 15 + 10))
@@ -148,7 +157,7 @@ def plain_inline(token):
             parts.append(" ")
         elif child.type == "link_open":
             href = child.attrGet("href")
-            if href and href.startswith("https://"):
+            if href and href.startswith(("https://", "http://")):
                 links.append(href)
     text = "".join(parts)
     for link in links:
@@ -165,7 +174,10 @@ def report_markdown(evidence):
             chunks.append(file.read_text())
     results = ROOT / "docs/verification-results.json"
     if results.exists():
-        chunks.append("# Фактически выполненные проверки\n\n```json\n" + results.read_text() + "\n```\n")
+        recorded = json.loads(results.read_text())
+        current = recorded.get("source_fingerprint") == verification_fingerprint()
+        notice = "Отпечаток исходников совпадает с проверенным набором." if current else "ВНИМАНИЕ: это исторический прогон; исходники изменились, его результат не подтверждает текущую версию."
+        chunks.append("# Фактически выполненные проверки\n\n" + notice + "\n\n```json\n" + results.read_text() + "\n```\n")
     chunks.append("# Единый реестр источников\n\nДата обращения: " + DATE + ". Возможность, описанная в источнике, не равна совместимости конкретной машины.\n")
     for item in evidence:
         for source in item.get("sources", []):
@@ -210,7 +222,7 @@ def make_reports(evidence):
             return
         document.add_paragraph(text, style=f"Heading {min(level, 3)}" if level else ("List Bullet" if bullet else "Normal"))
         text = escape(text).replace("\n", "<br/>")
-        text = re.sub(r"https://[^\s<]+", lambda m: f'<link href="{m.group(0)}" color="#146F8A">{m.group(0)}</link>', text)
+        text = re.sub(r"https?://[^\s<]+", lambda m: f'<link href="{m.group(0)}" color="#146F8A">{m.group(0)}</link>', text)
         story.append(Paragraph(("• " if bullet else "") + text, headings[level] if level else body))
 
     for token in parser.parse(markdown):
@@ -271,15 +283,36 @@ def make_reports(evidence):
     pdf.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
-def make_source_archive():
+def source_files():
     included_dirs = ("backend", "frontend/src", "frontend/public", "edge", "scripts", "tests", "research", "docs")
-    files = [ROOT / name for name in ("README.md", "requirements.txt", "requirements.lock", "pyproject.toml", "server.py", ".gitignore", ".env.example", ".hoplite/settings.json", ".hoplite/setup.sh", ".hoplite/run.sh", "frontend/package.json", "frontend/package-lock.json", "frontend/index.html", "frontend/tsconfig.json", "frontend/tsconfig.node.json", "frontend/tsconfig.app.json", "frontend/vite.config.ts")]
+    source_extensions = {".py", ".md", ".json", ".geojson", ".ts", ".tsx", ".css", ".svg", ".png", ".txt"}
+    files = [ROOT / name for name in ("README.md", "requirements.txt", "requirements.lock", "pyproject.toml", "server.py", ".gitignore", ".env.example", ".hoplite/settings.json", ".hoplite/setup.sh", ".hoplite/run.sh", ".github/workflows/verify.yml", "frontend/package.json", "frontend/package-lock.json", "frontend/index.html", "frontend/tsconfig.json", "frontend/tsconfig.node.json", "frontend/tsconfig.app.json", "frontend/vite.config.ts", "frontend/vitest.config.ts")]
     for directory in included_dirs:
-        files.extend((ROOT / directory).rglob("*"))
+        for path in (ROOT / directory).rglob("*"):
+            parts = path.relative_to(ROOT).parts
+            if (
+                path.suffix in source_extensions
+                and not any(part.startswith(".") or part in {"__pycache__", "node_modules", "dist"} for part in parts)
+                and ".hoplite-write-" not in path.name
+            ):
+                files.append(path)
+    files.append(ROOT / ".gitattributes")
+    return [path for path in sorted(set(files)) if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(ROOT)]
+
+
+def verification_fingerprint():
+    digest = hashlib.sha256()
+    for path in source_files():
+        if path.relative_to(ROOT).as_posix() == "docs/verification-results.json":
+            continue
+        digest.update(path.relative_to(ROOT).as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
+    return digest.hexdigest()
+
+
+def make_source_archive():
     with zipfile.ZipFile(OUT / "itles_source.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(set(files)):
-            if path.is_file() and "__pycache__" not in path.parts and not path.name.endswith((".pyc", ".db", ".sqlite3")):
-                archive.write(path, "itles/" + str(path.relative_to(ROOT)))
+        for path in source_files():
+            archive.write(path, "itles/" + str(path.relative_to(ROOT)))
 
 
 def main():

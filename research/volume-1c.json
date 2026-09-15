@@ -1,0 +1,322 @@
+{
+  "sources": [
+    {
+      "id": "V01",
+      "title": "StanForD 2010",
+      "publisher": "Skogforsk",
+      "date": "updated 2025-05-14; accessed 2026-09-15",
+      "url": "https://www.skogforsk.se/english/projects/stanford/stanford-2010/",
+      "claim": "StanForD2010 is an XML-based open interface for control, reporting and monitoring/follow-up of forestry machines; version and implementation must be established for the actual source.",
+      "status": "authoritative documentation; not evidence of availability on a particular machine"
+    },
+    {
+      "id": "V02",
+      "title": "StanForD2010 documentation and schemas",
+      "publisher": "Skogforsk",
+      "date": "accessed 2026-09-15",
+      "url": "https://stanford2010.skogforsk.se/",
+      "claim": "Official documentation lists multiple schema versions; a parser must use the version indicated by the incoming message rather than infer it from a machine model.",
+      "status": "authoritative documentation; field presence remains untested"
+    },
+    {
+      "id": "V03",
+      "title": "Volymsbestämning för flerträdshanterande aggregat",
+      "publisher": "Skogforsk",
+      "date": "2016; accessed 2026-09-15",
+      "url": "https://www.skogforsk.se/kunskapsbanken/kunskapsartiklar/2016/utveckling-av-en-standardiserad-metod-for-kalibrering-av-volymsbestamning-vid-avverkning-med-flertradshanterande-skordaraggregat/",
+      "claim": "Multi-tree processing cannot continuously measure each stem as single-tree processing does; bundle estimates may over- or under-estimate depending on stem size composition.",
+      "status": "authoritative research summary; not a universal error rate"
+    },
+    {
+      "id": "V04",
+      "title": "Measure up! A Skogforsk Guide to Harvester Measurement",
+      "publisher": "Skogforsk",
+      "date": "2018; accessed 2026-09-15",
+      "url": "https://www.skogforsk.se/contentassets/6d0b88fadcc5408c8e4bf4e09b44b108/measure-up.pdf",
+      "claim": "The guide describes length measurement by a measuring wheel and diameter measurement by delimbing knives or feed rollers; manual control measurements support calibration.",
+      "status": "authoritative guide; no machine-specific calibration result"
+    },
+    {
+      "id": "V05",
+      "title": "Introduction to StanForD 2010",
+      "publisher": "Skogforsk",
+      "date": "2015-08-26 draft; accessed 2026-09-15",
+      "url": "https://www.skogforsk.se/contentassets/1a68cdce4af1462ead048b7a5ef1cc06/stanford-2010-introduction-150826.pdf",
+      "claim": "The introduction describes harvested production and operational-monitoring messages, including HPR reporting context.",
+      "status": "official draft; must be paired with the actual schema/version"
+    },
+    {
+      "id": "V06",
+      "title": "StanForD2010 rules v1p5",
+      "publisher": "Skogforsk and Metsäteho",
+      "date": "2014-11-20; accessed 2026-09-15",
+      "url": "https://www.skogforsk.se/contentassets/1a68cdce4af1462ead048b7a5ef1cc06/stanford2010_rules_tablev1p5.pdf",
+      "claim": "Rules describe HPR handling and recommend ZIP/DEFLATE for compressed files; schema validation alone cannot test every semantic dependency.",
+      "status": "authoritative rules; not proof that a supplier exports HPR"
+    },
+    {
+      "id": "V07",
+      "title": "1С:Управление лесозаготовительным предприятием. Модуль для 1С:ERP и 1С:КА — возможности",
+      "publisher": "1С",
+      "date": "accessed 2026-09-15",
+      "url": "https://solutions.1c.ru/catalog/forest-plant-erp/features",
+      "claim": "The sector module is designed for forestry accounting from forest areas through shipment of roundwood and lists logging and acceptance processes.",
+      "status": "official product description; customer installation/version unknown"
+    },
+    {
+      "id": "V08",
+      "title": "Documentation: 1С:Управление лесозаготовительным предприятием. Модуль для 1С:ERP и 1С:КА",
+      "publisher": "1С:ИТС",
+      "date": "2022-08-08; accessed 2026-09-15",
+      "url": "https://its.1c.ru/db/1cleserp25/content/1/hdoc",
+      "claim": "The documentation enumerates roundwood harvesting, acceptance and measurement documents, reference data and deviation reports.",
+      "status": "official documentation; target metadata and release need pilot inspection"
+    },
+    {
+      "id": "V09",
+      "title": "1С:Предприятие 8. Лесозавод",
+      "publisher": "1С",
+      "date": "accessed 2026-09-15",
+      "url": "https://solutions.1c.ru/catalog/forest-plant",
+      "claim": "The solution is marked withdrawn from sale and historically covered forestry harvesting, receipt and shipment.",
+      "status": "official product description; not selected as a default target"
+    },
+    {
+      "id": "V10",
+      "title": "REST-интерфейс платформы",
+      "publisher": "1С",
+      "date": "accessed 2026-09-15",
+      "url": "https://v8.1c.ru/platforma/rest-interfeys/",
+      "claim": "The platform can publish an OData v3 REST interface for a particular application; exposed metadata and permissions control actual access.",
+      "status": "official platform documentation; no customer endpoint tested"
+    },
+    {
+      "id": "V11",
+      "title": "Обмен данными с конфигурацией через веб-сервисы EnterpriseData",
+      "publisher": "1С:ИТС",
+      "date": "2017-10-20; accessed 2026-09-15",
+      "url": "https://its.1c.ru/db/content/metod8dev/src/developers/dataexchange/enterprisedata/i8105852.htm",
+      "claim": "EnterpriseDataUpload supports one-way import and EnterpriseDataExchange supports two-way exchange when required services are deployed and configured.",
+      "status": "official method documentation; does not establish arbitrary XML or CSV compatibility"
+    },
+    {
+      "id": "V12",
+      "title": "Forest machine data easily available to customers",
+      "publisher": "Ponsse",
+      "date": "accessed 2026-09-15",
+      "url": "https://www.ponsse.com/news2/-/asset_publisher/ZE4CjSrtQpXR/content/forest-machine-data-easily-available-to-customers",
+      "claim": "Ponsse describes a Data API for customer reporting and ERP use, illustrating that manufacturer data access is a separate provider-specific arrangement.",
+      "status": "manufacturer statement; access scope, licensing and Russia availability not verified"
+    }
+  ],
+  "volume_checks": [
+    {
+      "name": "Native-volume identity gate",
+      "inputs": "volume_m3; bark_basis; volume_method_id; method_version; source_message_id; source_record_id; source_hash",
+      "formula": "Accept native display only when every required provenance field is present; otherwise status=insufficient_inputs.",
+      "result": "Target design: a value would be labelled machine_report rather than silently treated as a comparable accounting volume.",
+      "meaning": "The API preserves what the machine reported and the basis needed for later reconciliation.",
+      "limitation": "Presence of metadata does not prove calibration, physical correctness or data-access authorization.",
+      "sources": "V01; V02; V05; V06"
+    },
+    {
+      "name": "Illustrative Smalian calculation",
+      "inputs": "L=4.000 m; d1=0.300 m; d2=0.260 m; diameters and length are treated as over-or-under-bark only if the record says so",
+      "formula": "V=L×((π/4×d1²)+(π/4×d2²))/2",
+      "result": "0.2475575 m3",
+      "meaning": "Two end diameters and a length can yield a reproducible geometric calculation.",
+      "limitation": "Illustration only; it is not a mandated harvester, StanForD, ГОСТ or acceptance formula.",
+      "sources": "V04"
+    },
+    {
+      "name": "Illustrative Huber calculation",
+      "inputs": "L=4.000 m; dm=0.280 m; mean diameter only",
+      "formula": "V=L×π/4×dm²",
+      "result": "0.2463009 m3",
+      "meaning": "A different geometric model produces a different result from the same illustrative dimensions.",
+      "limitation": "The machine method, bark treatment, profile extrapolation and rounding are unknown until supplied by the actual source.",
+      "sources": "V04; V02"
+    },
+    {
+      "name": "Local formula sensitivity",
+      "inputs": "Smalian illustration: L=4.000 m; d1=0.300 m; d2=0.260 m; perturbations ±0.010 m length and ±0.001 m diameter",
+      "formula": "∂V/∂L=0.0618894 m2; ∂V/∂d1=0.9424778 m3/m; ∂V/∂d2=0.8168141 m3/m; Huber ∂V/∂dm=1.7592919 m3/m",
+      "result": "Smalian length ±0.010 m gives ±0.0006189 m3; d1 ±0.001 m gives ±0.0009425 m3; d2 ±0.001 m gives ±0.0008168 m3; Huber dm ±0.001 m gives ±0.0017593 m3.",
+      "meaning": "The entries are mathematical derivatives for this example and help test unit conversions.",
+      "limitation": "They are not measured machine error, calibration tolerance or a confidence interval.",
+      "sources": "V04"
+    },
+    {
+      "name": "Three-pair comparable-basis reconciliation",
+      "inputs": "Synthetic pairs only: P-01 machine=10.000 m3 receipt=9.800 m3; P-02 machine=8.500 m3 receipt=8.670 m3; P-03 machine=5.000 m3 receipt=5.000 m3; same assortment, bark basis, method and period within each pair",
+      "formula": "e_i=V_receipt,i−V_machine,i; r_i=e_i/V_machine,i; weighted aggregate=Σe_i/ΣV_machine,i",
+      "result": "P-01 e=-0.200 m3 r=-2.00%; P-02 e=+0.170 m3 r=+2.00%; P-03 e=0.000 m3 r=0.00%; aggregate=-0.030/23.500=-0.1277%.",
+      "meaning": "The test validates pair keys and weighted aggregation without averaging naked percentages.",
+      "limitation": "These are fabricated arithmetic fixtures, not empirical receipts; incomparable bark/method/party records must be rejected from this calculation.",
+      "sources": "V03; V04"
+    },
+    {
+      "name": "Confidence-interval eligibility",
+      "inputs": "Predefined representative sampling plan; paired errors; independence assessment; selected interval method; enough observations under that plan",
+      "formula": "Report an interval only for the explicitly defined statistic and assumptions; do not use a fixed universal n threshold.",
+      "result": "No 95% confidence interval is reported now.",
+      "meaning": "A statistical interval is conditional evidence, not a generic accuracy badge.",
+      "limitation": "No samples, representative design or calibration history have been supplied.",
+      "sources": "V03; V04"
+    }
+  ],
+  "integration": [
+    {
+      "field": "schema_version",
+      "target": "Custom 1С HTTP-service inbox handler",
+      "transformation": "Accept exactly harvest-receipt.v1.",
+      "validation": "Any unrecognized version is rejected before document creation.",
+      "status": "proposed; no 1С extension implemented",
+      "sources": "V10; V11"
+    },
+    {
+      "field": "source_system plus event_id",
+      "target": "Idempotency register in the custom 1С extension",
+      "transformation": "Use the pair as immutable external event identity.",
+      "validation": "A repeated pair returns the stored result and document_uid without creating a second document.",
+      "status": "proposed; no database or 1С test performed",
+      "sources": "V10; V11"
+    },
+    {
+      "field": "organization_external_code",
+      "target": "Organization directory",
+      "transformation": "Resolve only against a customer-approved external-code table.",
+      "validation": "Missing or ambiguous mapping is rejected; legal entity name is not needed in the product payload.",
+      "status": "proposed; target configuration unknown",
+      "sources": "V07; V08"
+    },
+    {
+      "field": "machine_asset_external_code",
+      "target": "Logging complex or fixed-asset reference chosen in the target configuration",
+      "transformation": "Resolve through an allowlisted asset mapping.",
+      "validation": "Do not accept an operator name, personnel number or free-text substitution.",
+      "status": "proposed; target metadata unknown",
+      "sources": "V07; V08"
+    },
+    {
+      "field": "occurred_at_utc plus plant_timezone",
+      "target": "Document date and operational period",
+      "transformation": "Store UTC and apply the configured IANA plant timezone only for local business presentation.",
+      "validation": "UTC and timezone must be present and parseable; no silent server-time conversion.",
+      "status": "proposed; no 1С test performed",
+      "sources": "V08; V10"
+    },
+    {
+      "field": "site_external_code",
+      "target": "Forest plot or logging-site reference",
+      "transformation": "Resolve only through preapproved site mapping.",
+      "validation": "Unknown site is rejected rather than created as an uncontrolled directory item.",
+      "status": "proposed; site metadata unknown",
+      "sources": "V07; V08"
+    },
+    {
+      "field": "product_external_code plus species_external_code plus assortment_external_code",
+      "target": "Nomenclature, characteristic and grade references selected during pilot",
+      "transformation": "Resolve each external code through versioned approved NСИ mapping.",
+      "validation": "All required codes must map; blank or fallback values are rejected.",
+      "status": "proposed; no mapping has been approved",
+      "sources": "V07; V08"
+    },
+    {
+      "field": "warehouse_external_code",
+      "target": "Warehouse reference",
+      "transformation": "Resolve a code to a warehouse available for the mapped organization.",
+      "validation": "Reject a missing, inaccessible or organization-mismatched warehouse.",
+      "status": "proposed; configuration and access rights unknown",
+      "sources": "V08"
+    },
+    {
+      "field": "action",
+      "target": "Agreed document type or operation",
+      "transformation": "Map allowed action harvest_production to the agreed logging-production scenario.",
+      "validation": "Reject every action not in the target's approved allowlist.",
+      "status": "proposed; 1С:ERP Управление предприятием 2 is only a candidate target",
+      "sources": "V07; V08"
+    },
+    {
+      "field": "volume_m3 plus bark_basis plus volume_method_id plus rounding_rule",
+      "target": "Quantity and traceability attributes of the target document",
+      "transformation": "Use Decimal m3; preserve the stated bark basis and method; do not make an implicit conversion.",
+      "validation": "Volume must be greater than zero; bark basis, method and rounding rule must match approved dictionaries.",
+      "status": "proposed; no direct EnterpriseData, OData, XML or CSV load exists",
+      "sources": "V03; V04; V08"
+    },
+    {
+      "field": "source_message_id plus source_record_id plus source_hash",
+      "target": "Source-provenance attributes and audit register",
+      "transformation": "Use source_message_id plus source_record_id as immutable identity; store source_hash separately for the projected payload.",
+      "validation": "A same-identity/same-hash replay is idempotent; a same-identity/different-hash delivery enters conflict quarantine and never creates a second volume.",
+      "status": "proposed; raw HPR is processed only in an approved customer-local isolated processor and is not uploaded to the cloud app",
+      "sources": "V01; V05; V06"
+    },
+    {
+      "field": "accepted or rejected acknowledgement",
+      "target": "HTTP response from the custom extension",
+      "transformation": "Return event_id, status, document_uid only when accepted, rejection_code, schema_version and processed_at_utc.",
+      "validation": "An error must leave no partial movements or partially posted document after transaction rollback.",
+      "status": "proposed; transaction behavior requires test in the agreed 1С release",
+      "sources": "V10; V11"
+    }
+  ],
+  "field_tests": [
+    {
+      "test": "Machine-source capability passport",
+      "equipment": "One specific harvester, head, onboard-computer software/version evidence, supplier agreement and an approved sample export or API sandbox",
+      "steps": "Record model/head/software/licence; establish data channel; identify schema/type/fields/units and compare them with a documented allowlist.",
+      "expected": "A signed capability matrix separates present, exportable, absent and unknown fields.",
+      "pass_criterion": "No field is represented as supported until it appears in the approved source and its unit/basis is documented.",
+      "evidence": "Versioned capability matrix; sanitized source manifest; parser-validation report; access authorization record.",
+      "status": "not tested; no machine or source sample supplied"
+    },
+    {
+      "test": "StanForD ingestion, corruption and replay",
+      "equipment": "Approved synthetic and production-permitted HPR fixtures, schema validator, hash ledger and customer-local isolated parser",
+      "steps": "Validate the exact schema version; submit valid, duplicate, truncated, oversized and unknown-field fixtures; inspect accepted/rejected results.",
+      "expected": "Only valid, complete and allowed projections enter the normalized store; same-identity/same-hash replay creates no duplicate and changed payload enters quarantine.",
+      "pass_criterion": "Every negative fixture receives a deterministic rejection code; no duplicate source record is created; same identity with different hash has no volume effect.",
+      "evidence": "Fixture hashes; validation logs; acceptance/rejection ledger; automated-test output.",
+      "status": "not tested; no actual HPR file supplied"
+    },
+    {
+      "test": "Blind manual measurement and calibration holdout",
+      "equipment": "Calibrated measuring tape, calibrated calliper, physical non-personal log tags, independent measurer, authorized machine-calibration specialist",
+      "steps": "Pre-register stratified sample rules; independently measure selected logs without seeing machine results; pair after lock; calibrate through authorized onboard controls; remeasure an operator-independent held-out sample not used for adjustment.",
+      "expected": "Paired errors e_i, absolute errors and volume-weighted aggregate are reproducible before and after calibration.",
+      "pass_criterion": "The held-out result meets a tolerance and method pre-agreed by the customer for the exact machine/head/assortment/bark basis; no universal tolerance is asserted.",
+      "evidence": "Instrument calibration records; selection protocol; blinded sheets; immutable source export; calibration-change record; holdout analysis.",
+      "status": "not tested; no physical machine, logs or approved tolerance supplied"
+    },
+    {
+      "test": "Receipt reconciliation of three comparable pilot lots",
+      "equipment": "Three traceable production lots, machine reports, physical dispatch identifiers and receipt/measurement documents",
+      "steps": "Match each lot using agreed party, period, species, assortment, bark basis, method and units; calculate e_i and weighted aggregate; route non-comparable lots to review.",
+      "expected": "Each accepted pair has complete provenance and a reproducible difference calculation.",
+      "pass_criterion": "All three pairs are comparable under the pre-agreed basis; unmatched or basis-mismatched entries are not counted as losses.",
+      "evidence": "Lot crosswalk; source identifiers; receipt document references; reconciliation report; exception queue.",
+      "status": "not tested; synthetic arithmetic only exists in this research note"
+    },
+    {
+      "test": "1С inbox transaction and idempotence",
+      "equipment": "Customer-authorized non-production 1С test base, exact configuration/release metadata, minimal technical user and custom HTTP extension",
+      "steps": "Submit a valid normalized event; repeat it; submit unmapped NСИ, invalid bark basis, invalid volume and a forced posting failure; inspect documents and registers.",
+      "expected": "The valid event creates one agreed document; replay returns the same document_uid; invalid events are rejected and failure rolls back.",
+      "pass_criterion": "No partial document or movement remains after every rejected case and the accepted document is visible in the agreed 1С business scenario.",
+      "evidence": "Metadata export; endpoint configuration; request/response audit; document UID; rollback evidence; customer sign-off.",
+      "status": "not tested; no 1С base, exact release or extension exists"
+    },
+    {
+      "test": "Data-minimisation inspection",
+      "equipment": "Ingress schema, edge projection configuration, test telemetry/HPR fixture and storage-access audit",
+      "steps": "Inject prohibited names, personnel IDs, emails, operator profiles, raw GPS traces and free text; inspect request logs, database, backups and 1С payload.",
+      "expected": "Only allowlisted technical/aggregation fields persist; prohibited fields are rejected or removed at the edge before storage.",
+      "pass_criterion": "No prohibited field reaches product storage or 1С payload, and GPS/time use has an approved purpose, retention and role policy.",
+      "evidence": "Schema rules; projection test report; access logs; retention configuration; privacy review.",
+      "status": "not tested; data-protection policy and real integration are not yet supplied"
+    }
+  ]
+}

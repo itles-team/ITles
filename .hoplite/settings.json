@@ -6,5 +6,6 @@
   },
   "ports": {
     "preview": 3000
-  }
+  },
+  "services": []
 }

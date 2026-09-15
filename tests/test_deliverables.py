@@ -135,3 +135,15 @@ def test_archive_ignores_hidden_secrets_editor_temp_and_symlink_targets(tmp_path
     build_deliverables.make_source_archive()
     with zipfile.ZipFile(tmp_path / "itles_source.zip") as archive:
         assert archive.namelist() == ["itles/backend/app.py"]
+    build_deliverables.make_deployment_archive()
+    with zipfile.ZipFile(tmp_path / "itles_deploy.zip") as archive:
+        assert archive.namelist() == ["backend/app.py"]
+
+
+def test_deployment_archive_has_dockerfile_at_root_and_no_runtime_data(output_dir):
+    with zipfile.ZipFile(output_dir / "itles_deploy.zip") as archive:
+        names = set(archive.namelist())
+        assert {"Dockerfile", ".dockerignore", "deployment/compose.yaml", "server.py", "requirements.lock",
+                "backend/app.py", "frontend/package-lock.json", "docs/deployment.md"} <= names
+        assert names == {str(path.relative_to(build_deliverables.ROOT)) for path in build_deliverables.source_files()}
+        assert not any(name.startswith(("itles/", "data/", ".local/", ".hoplite/attachments/")) for name in names)

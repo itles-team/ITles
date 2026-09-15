@@ -1,21 +1,21 @@
 {
-  "verified_at_utc": "2026-09-15T22:25:21+00:00",
-  "source_fingerprint": "2b80df02eafc2c3b821474761d3b23fafd00ebac408b369c858181004b120210",
+  "verified_at_utc": "2026-09-15T23:10:51+00:00",
+  "source_fingerprint": "07a4f267fb705b7db8e669d624693c4b8210efa79c23fd355f307e3c63ddde56",
   "evidence_level": "synthetic_and_documentary_only",
   "setup": {
     "command": "bash .hoplite/setup.sh",
-    "result": "passed_when_executed_in_shell",
-    "managed_setup": "blocked_by_platform_lifecycle_lease"
+    "result": "passed_via_sandbox_reprovision",
+    "managed_setup": "completed_after_runtime_reprovision"
   },
   "python": {
     "command": ".venv/bin/python -m pytest -q",
-    "passed": 54,
+    "passed": 62,
     "failed": 0,
     "warnings": [
       "Starlette TestClient httpx deprecation",
       "AnyIO BlockingPortal alias deprecation"
     ],
-    "scope": "API/SQLite/outbox/deliverables and built asset serving via in-process ASGI TestClient"
+    "scope": "API/SQLite/outbox/deliverables/ASGI composition and deployment probe regressions"
   },
   "frontend": {
     "build_command": "npm --prefix frontend run build",
@@ -30,8 +30,8 @@
     "records": 10000,
     "duplicate_deliveries": 10000,
     "total_m3": "1234.560000",
-    "ingest_and_retries_seconds": 1.019,
-    "fleet_query_seconds": 0.052
+    "ingest_and_retries_seconds": 0.771,
+    "fleet_query_seconds": 0.032
   },
   "dependency_audits": {
     "pip_audit_known_vulnerabilities": 0,
@@ -39,15 +39,27 @@
     "limitation": "Point-in-time advisory checks, not proof of complete security"
   },
   "browser": {
-    "status": "blocked",
-    "observed_error": "net::ERR_CONNECTION_REFUSED",
-    "managed_preview": "Returns old crashed run from 2026-09-15T21:39:57Z without starting a new command",
-    "repository_config": "Corrected to version 1 and enabled/command script objects; project_settings_get recognizes both scripts",
-    "recovery": "Reported to platform; sandbox_setup blocked by lifecycle lease; sandbox_restart unavailable",
-    "visual_acceptance": "not_performed"
+    "status": "demo_login_and_map_passed",
+    "environment": "Hoplite managed native Python preview, not the Docker image or customer host",
+    "observed": "Real browser clicked demo login, waited for production map, observed 3 fictional machines and metric cards; browser errors empty in that batch",
+    "limitations": [
+      "Remaining pages, logout and full accessibility not verified in this browser run",
+      "Inter-call CDP connection closed in one attempt; successful verification used one complete browser batch"
+    ],
+    "visual_acceptance": "not_comprehensive",
+    "previous_blocker": "Stale preview crash recovered after sandbox runtime reprovision"
   },
   "real_oem_files": "not_provided_not_tested",
   "physical_machine": "not_connected_not_field_tested",
   "one_c": "design_only_no_customer_configuration_connected",
-  "production_deployment": "not_performed"
+  "production_deployment": "User static frontend is reachable; full-stack redeployment on hosting not performed by agent",
+  "deployment": {
+    "public_host_diagnosis": "GET /api/health is HTML 200; POST /api/auth/login and /api/auth/demo are nginx HTML 405",
+    "credentials": "No user password transmitted or stored",
+    "native_http_probe": "Passed health JSON, unauthenticated rejection, login validation, demo session, machine list and logout at managed localhost server",
+    "docker_image": "not_verified_locally",
+    "docker_blocker": "Legacy Docker build broker connection broken; Compose BuildKit rejected because it requests a privileged container. Policy was not bypassed.",
+    "ci_container_job": "added_not_yet_verified",
+    "archive": "itles_deploy.zip contains Dockerfile at root; source allowlist excludes data, runtime state and attachments"
+  }
 }

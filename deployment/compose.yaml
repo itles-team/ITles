@@ -1,0 +1,17 @@
+services:
+  itles:
+    build:
+      context: ..
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      PORT: "8080"
+      ITLES_DB_PATH: /data/itles.sqlite3
+      ITLES_DEMO_ENABLED: "${ITLES_DEMO_ENABLED:-0}"
+      ITLES_COOKIE_SECURE: "1"
+    volumes:
+      - itles-data:/data
+
+volumes:
+  itles-data:

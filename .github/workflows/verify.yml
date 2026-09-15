@@ -8,6 +8,39 @@ permissions:
   contents: read
 
 jobs:
+  container-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build full-stack container
+        run: docker build -t itles-ci .
+      - name: Verify API, demo login and persistent volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker volume create itles-ci-data
+          trap 'docker logs itles-ci; docker rm -f itles-ci; docker volume rm itles-ci-data' EXIT
+          docker run -d --name itles-ci -p 127.0.0.1:18080:8080 \
+            -v itles-ci-data:/data itles-ci
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:18080/api/health; then break; fi
+            sleep 2
+          done
+          docker exec itles-ci python -m scripts.check_deployment --url http://127.0.0.1:8080
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:18080/api/auth/demo)" = 404
+          docker exec itles-ci python -c 'from pathlib import Path; Path("/data/persistence-probe").write_text("synthetic-ci-only")'
+          docker rm -f itles-ci
+          docker run -d --name itles-ci -p 127.0.0.1:18080:8080 \
+            -v itles-ci-data:/data -e ITLES_DEMO_ENABLED=1 -e ITLES_COOKIE_SECURE=0 itles-ci
+          for attempt in {1..30}; do
+            if curl -fsS http://127.0.0.1:18080/api/health; then break; fi
+            sleep 2
+          done
+          docker exec itles-ci python -m scripts.check_deployment --url http://127.0.0.1:8080 --demo
+          docker exec itles-ci python -c 'from pathlib import Path; assert Path("/data/persistence-probe").read_text() == "synthetic-ci-only"'
+          curl -fsS http://127.0.0.1:18080/ | grep 'id="root"'
+          curl -fsS http://127.0.0.1:18080/api/documents/itles_source.zip -o /tmp/itles_source.zip
   synthetic-verification:
     runs-on: ubuntu-latest
     timeout-minutes: 15

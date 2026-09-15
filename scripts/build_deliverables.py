@@ -296,7 +296,7 @@ def source_files():
                 and ".hoplite-write-" not in path.name
             ):
                 files.append(path)
-    files.append(ROOT / ".gitattributes")
+    files.extend(ROOT / name for name in (".gitattributes", "Dockerfile", ".dockerignore", "deployment/compose.yaml"))
     return [path for path in sorted(set(files)) if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(ROOT)]
 
 
@@ -315,12 +315,19 @@ def make_source_archive():
             archive.write(path, "itles/" + str(path.relative_to(ROOT)))
 
 
+def make_deployment_archive():
+    with zipfile.ZipFile(OUT / "itles_deploy.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in source_files():
+            archive.write(path, str(path.relative_to(ROOT)))
+
+
 def main():
     OUT.mkdir(exist_ok=True)
     evidence = load_evidence()
     make_workbook(evidence)
     make_reports(evidence)
     make_source_archive()
+    make_deployment_archive()
     for file in sorted(OUT.iterdir()):
         print(f"{file.name}: {file.stat().st_size} bytes")
 

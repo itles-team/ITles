@@ -61,9 +61,9 @@
     "public_host_diagnosis": "статический шаблон хостинга отдавал nginx 405 на POST /api/auth/*; исправление — Docker-режим с Dockerfile в корне архива",
     "credentials": "пароли пользователя не передавались и не сохранялись",
     "native_http_probe": "пройден на управляемом локальном сервере (health JSON, отказ без auth, логин, учебная сессия, список машин, выход)",
-    "docker_image": "not_verified_locally",
-    "docker_blocker": "локальная сборка образа заблокирована политикой песочницы (BuildKit требует привилегированный контейнер); компенсация — задание container-verification в CI, результат ещё не наблюдён",
-    "ci_container_job": "added_pending_first_run",
+    "docker_image": "not_verified_locally; container-verification job passed once on CI (build, API health, demo login, persistent volume)",
+    "docker_blocker": "локальная сборка образа заблокирована политикой песочницы (BuildKit требует привилегированный контейнер); компенсация — задание container-verification в CI, первый прогон успешен 2026-09-16",
+    "ci_container_job": "passed_first_run",
     "archive": "itles_deploy.zip содержит Dockerfile в корне; права файлов в архиве нормализованы 0644; исходники, шрифты OFL, DESIGN.md и demo-scenario включены; data/ и .local/ исключены"
   }
 }

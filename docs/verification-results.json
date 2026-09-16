@@ -1,65 +1,69 @@
 {
-  "verified_at_utc": "2026-09-15T23:10:51+00:00",
-  "source_fingerprint": "07a4f267fb705b7db8e669d624693c4b8210efa79c23fd355f307e3c63ddde56",
+  "verified_at_utc": "2026-09-16T00:45:25+00:00",
+  "source_fingerprint": "см. отчёт: отпечаток пересчитывается при каждой сборке",
   "evidence_level": "synthetic_and_documentary_only",
   "setup": {
     "command": "bash .hoplite/setup.sh",
-    "result": "passed_via_sandbox_reprovision",
-    "managed_setup": "completed_after_runtime_reprovision"
+    "result": "passed",
+    "scope": "зависимости, сборка фронтенда и генерация документов в управляемой песочнице"
   },
   "python": {
     "command": ".venv/bin/python -m pytest -q",
-    "passed": 62,
+    "passed": 98,
     "failed": 0,
-    "warnings": [
-      "Starlette TestClient httpx deprecation",
-      "AnyIO BlockingPortal alias deprecation"
-    ],
-    "scope": "API/SQLite/outbox/deliverables/ASGI composition and deployment probe regressions"
+    "scope": "API/SQLite/outbox/deliverables/seed demo-v2/ASGI-композиция/регрессии снапшотной согласованности и сессионной ёмкости"
   },
   "frontend": {
     "build_command": "npm --prefix frontend run build",
     "build": "passed",
     "test_command": "npm --prefix frontend test",
-    "component_tests_passed": 12,
-    "scope": "jsdom, mocked fetch and Leaflet; not a real-browser or visual verification"
+    "component_tests_passed": 22,
+    "scope": "jsdom с mock fetch и Leaflet; это не браузерная и не визуальная проверка"
   },
   "stress": {
     "status": "passed",
     "evidence": "synthetic_in_process_not_network_or_field",
     "records": 10000,
     "duplicate_deliveries": 10000,
-    "total_m3": "1234.560000",
-    "ingest_and_retries_seconds": 0.771,
+    "ingest_and_retries_seconds": 0.682,
     "fleet_query_seconds": 0.032
   },
-  "dependency_audits": {
-    "pip_audit_known_vulnerabilities": 0,
-    "npm_audit_all_dependencies_known_vulnerabilities": 0,
-    "limitation": "Point-in-time advisory checks, not proof of complete security"
-  },
   "browser": {
-    "status": "demo_login_and_map_passed",
-    "environment": "Hoplite managed native Python preview, not the Docker image or customer host",
-    "observed": "Real browser clicked demo login, waited for production map, observed 3 fictional machines and metric cards; browser errors empty in that batch",
-    "limitations": [
-      "Remaining pages, logout and full accessibility not verified in this browser run",
-      "Inter-call CDP connection closed in one attempt; successful verification used one complete browser batch"
+    "status": "passed_full_demo_walkthrough",
+    "environment": "Hoplite managed native Python preview (порт 3000), не Docker-образ и не хостинг заказчика",
+    "verified_scenarios": [
+      "учебный вход без пароля; вход организации раскрыт отдельно",
+      "ошибка неверного входа объясняется по-русски и не раскрывает существование аккаунта",
+      "обзор: суммы по базам раздельно, панель «Проверить данные», поиск и сортировка машин",
+      "карта: авто-масштаб, кнопка «Весь парк», постоянная подпись следует за выбранной машиной",
+      "карточка: сохранённый ноль оборотов, «—» для отсутствия данных, пояснения с явным «норма не подтверждена»",
+      "машина без координат и записей: честные пустые состояния",
+      "парк и объём: раздельные базы, предупреждения о смешанных методах/версиях/источниках, CSV-выгрузка",
+      "качество данных: счётчики пакетов с пометкой СИНТЕТИЧЕСКИЙ ПРИМЕР, не результат доставки",
+      "передача данных: реальные команды outbox, статусы реализованного и неподключённого",
+      "исследования: скачивание XLSX/DOCX/PDF/ZIP по прямым ссылкам",
+      "выход: подтверждён сервером; при ошибке сети сеанс не объявляется завершённым",
+      "обратный период: предупреждение, запросов нет, нулевые карточки не показываются",
+      "пустой период: «нет записей» без вымышленных нулей",
+      "мобильные ширины 320/359/390/650 px без горизонтального скролла страницы; таблица прокручивается внутри контейнера",
+      "мобильное меню: inert в закрытом состоянии, Escape возвращает фокус"
     ],
-    "visual_acceptance": "not_comprehensive",
-    "previous_blocker": "Stale preview crash recovered after sandbox runtime reprovision"
+    "limitations": [
+      "скриншоты просмотрены моделью; независимой человеческой визуальной приёмки не было",
+      "полный аудит доступности (скринридер, 200% zoom) не выполнялся",
+      "проверен учебный сценарий demo-v2, а не реальные данные предприятия"
+    ]
   },
   "real_oem_files": "not_provided_not_tested",
   "physical_machine": "not_connected_not_field_tested",
   "one_c": "design_only_no_customer_configuration_connected",
-  "production_deployment": "User static frontend is reachable; full-stack redeployment on hosting not performed by agent",
   "deployment": {
-    "public_host_diagnosis": "GET /api/health is HTML 200; POST /api/auth/login and /api/auth/demo are nginx HTML 405",
-    "credentials": "No user password transmitted or stored",
-    "native_http_probe": "Passed health JSON, unauthenticated rejection, login validation, demo session, machine list and logout at managed localhost server",
+    "public_host_diagnosis": "статический шаблон хостинга отдавал nginx 405 на POST /api/auth/*; исправление — Docker-режим с Dockerfile в корне архива",
+    "credentials": "пароли пользователя не передавались и не сохранялись",
+    "native_http_probe": "пройден на управляемом локальном сервере (health JSON, отказ без auth, логин, учебная сессия, список машин, выход)",
     "docker_image": "not_verified_locally",
-    "docker_blocker": "Legacy Docker build broker connection broken; Compose BuildKit rejected because it requests a privileged container. Policy was not bypassed.",
-    "ci_container_job": "added_not_yet_verified",
-    "archive": "itles_deploy.zip contains Dockerfile at root; source allowlist excludes data, runtime state and attachments"
+    "docker_blocker": "локальная сборка образа заблокирована политикой песочницы (BuildKit требует привилегированный контейнер); компенсация — задание container-verification в CI, результат ещё не наблюдён",
+    "ci_container_job": "added_pending_first_run",
+    "archive": "itles_deploy.zip содержит Dockerfile в корне; права файлов в архиве нормализованы 0644; исходники, шрифты OFL, DESIGN.md и demo-scenario включены; data/ и .local/ исключены"
   }
 }

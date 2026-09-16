@@ -168,7 +168,7 @@ def plain_inline(token):
 
 def report_markdown(evidence):
     chunks = ["# ИТлес\n\n## Достоверные данные прежде обещаний\n\nТехнический отчёт и программа пилота. Версия от " + DATE + ".\n\nИсследование: открытая документация. Программные примеры: синтетические. Реальная машина и 1С заказчика: не подключены.\n"]
-    for path in ("docs/architecture.md", "research/hardware.md", "research/volume-1c.md", "docs/privacy.md", "docs/verification.md", "README.md"):
+    for path in ("docs/architecture.md", "research/hardware.md", "research/volume-1c.md", "docs/privacy.md", "docs/demo-scenario.md", "docs/verification.md", "README.md"):
         file = ROOT / path
         if file.exists():
             chunks.append(file.read_text())
@@ -285,7 +285,7 @@ def make_reports(evidence):
 
 def source_files():
     included_dirs = ("backend", "frontend/src", "frontend/public", "edge", "scripts", "tests", "research", "docs")
-    source_extensions = {".py", ".md", ".json", ".geojson", ".ts", ".tsx", ".css", ".svg", ".png", ".txt"}
+    source_extensions = {".py", ".md", ".json", ".geojson", ".ts", ".tsx", ".css", ".svg", ".png", ".txt", ".ttf"}
     files = [ROOT / name for name in ("README.md", "requirements.txt", "requirements.lock", "pyproject.toml", "server.py", ".gitignore", ".env.example", ".hoplite/settings.json", ".hoplite/setup.sh", ".hoplite/run.sh", ".github/workflows/verify.yml", "frontend/package.json", "frontend/package-lock.json", "frontend/index.html", "frontend/tsconfig.json", "frontend/tsconfig.node.json", "frontend/tsconfig.app.json", "frontend/vite.config.ts", "frontend/vitest.config.ts")]
     for directory in included_dirs:
         for path in (ROOT / directory).rglob("*"):
@@ -296,7 +296,7 @@ def source_files():
                 and ".hoplite-write-" not in path.name
             ):
                 files.append(path)
-    files.extend(ROOT / name for name in (".gitattributes", "Dockerfile", ".dockerignore", "deployment/compose.yaml"))
+    files.extend(ROOT / name for name in ("DESIGN.md", ".gitattributes", "Dockerfile", ".dockerignore", "deployment/compose.yaml"))
     return [path for path in sorted(set(files)) if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(ROOT)]
 
 
@@ -312,13 +312,21 @@ def verification_fingerprint():
 def make_source_archive():
     with zipfile.ZipFile(OUT / "itles_source.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in source_files():
-            archive.write(path, "itles/" + str(path.relative_to(ROOT)))
+            archive_source(archive, path, "itles/" + str(path.relative_to(ROOT)))
 
 
 def make_deployment_archive():
     with zipfile.ZipFile(OUT / "itles_deploy.zip", "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in source_files():
-            archive.write(path, str(path.relative_to(ROOT)))
+            archive_source(archive, path, str(path.relative_to(ROOT)))
+
+
+def archive_source(archive, path, name):
+    entry = zipfile.ZipInfo.from_file(path, name)
+    # Do not inherit private sandbox file modes into the deployable sources.
+    entry.external_attr = 0o100644 << 16
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    archive.writestr(entry, path.read_bytes())
 
 
 def main():

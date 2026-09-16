@@ -98,6 +98,9 @@ def test_source_archive_contains_reviewable_sources_but_not_secrets_or_local_sta
     assert "itles/edge/outbox.py" in names
     assert "itles/scripts/build_deliverables.py" in names
     assert "itles/research/hardware.json" in names
+    assert {"itles/DESIGN.md", "itles/docs/demo-scenario.md", "itles/frontend/src/api.ts",
+            "itles/frontend/src/assets/fonts/GolosText.ttf", "itles/frontend/src/assets/fonts/GolosText-OFL.txt",
+            "itles/frontend/src/assets/fonts/PTSerif-Regular.ttf", "itles/frontend/src/assets/fonts/PTSerif-OFL.txt"} <= set(names)
     assert all(name.startswith("itles/") and not name.startswith("/") for name in names)
 
     forbidden_parts = {".git", ".local", ".venv", "__pycache__", ".pytest_cache", "node_modules", "data", "deliverables"}
@@ -143,6 +146,7 @@ def test_archive_ignores_hidden_secrets_editor_temp_and_symlink_targets(tmp_path
 def test_deployment_archive_has_dockerfile_at_root_and_no_runtime_data(output_dir):
     with zipfile.ZipFile(output_dir / "itles_deploy.zip") as archive:
         names = set(archive.namelist())
+        assert all((item.external_attr >> 16) & 0o777 == 0o644 for item in archive.infolist())
         assert {"Dockerfile", ".dockerignore", "deployment/compose.yaml", "server.py", "requirements.lock",
                 "backend/app.py", "frontend/package-lock.json", "docs/deployment.md"} <= names
         assert names == {str(path.relative_to(build_deliverables.ROOT)) for path in build_deliverables.source_files()}

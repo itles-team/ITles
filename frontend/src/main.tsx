@@ -14,6 +14,8 @@ import {
   MapContainer,
   Polyline,
   Tooltip,
+  useMap,
+  ZoomControl,
 } from "react-leaflet";
 import L from "leaflet";
 import type { GeoJsonObject } from "geojson";
@@ -35,10 +37,18 @@ import {
   ShieldCheck,
   Trees,
   X,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  LayoutDashboard,
+  LocateFixed,
+  Search,
+  Clock3,
 } from "lucide-react";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 import naturalEarthRussiaRegionText from "./assets/natural-earth-russia-region.geojson?raw";
+import { ApiError, request } from "./api";
 
 type Status = "fresh" | "stale" | "missing" | "invalid";
 type Metric = {
@@ -136,39 +146,13 @@ const naturalEarthRussiaRegion = JSON.parse(
   naturalEarthRussiaRegionText,
 ) as GeoJsonObject;
 const nav = [
+  ["overview", "Обзор парка", LayoutDashboard],
   ["map", "Карта производства", MapIcon],
   ["fleet", "Парк и объём", BarChart3],
   ["quality", "Качество данных", ShieldCheck],
   ["data", "Передача данных", Database],
   ["docs", "Исследования", BookOpen],
 ] as const;
-
-async function request<T>(url: string, options?: RequestInit): Promise<T> {
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      credentials: "same-origin",
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...(options?.headers ?? {}),
-      },
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError")
-      throw error;
-    throw new Error(
-      "Сервер недоступен. Проверьте соединение и повторите запрос.",
-    );
-  }
-  if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as {
-      detail?: string;
-    };
-    throw new Error(body.detail || `Ошибка запроса (${response.status})`);
-  }
-  return response.json() as Promise<T>;
-}
 
 function isAbortError(error: unknown) {
   return error instanceof Error && error.name === "AbortError";
@@ -266,6 +250,11 @@ function volume(value: string) {
   const grouped = integer.replace(/\B(?=(\d{3})+(?!\d))/g, "\u00a0");
   const significantFraction = fraction.slice(0, 6).replace(/0+$/, "");
   return significantFraction ? `${grouped},${significantFraction}` : grouped;
+}
+
+function recordCount(count: number) {
+  const form = new Intl.PluralRules("ru").select(count);
+  return `${count} ${form === "one" ? "запись" : form === "few" ? "записи" : "записей"}`;
 }
 
 function StatusPill({ status }: { status: Status }) {
@@ -389,15 +378,25 @@ function Empty({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Login({ onSession }: { onSession: (session: Session) => void }) {
+function Login({
+  onSession,
+  demoAvailable,
+  initialError,
+}: {
+  onSession: (session: Session) => void;
+  demoAvailable: boolean;
+  initialError: string;
+}) {
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"organization" | "demo" | null>(null);
+  const [organizationOpen, setOrganizationOpen] = useState(!demoAvailable);
+  const [passwordVisible, setPasswordVisible] = useState(false);
   async function login(event: FormEvent) {
     event.preventDefault();
     setError("");
-    setBusy(true);
+    setBusy("organization");
     try {
       onSession(
         await request<Session>("/api/auth/login", {
@@ -408,88 +407,172 @@ function Login({ onSession }: { onSession: (session: Session) => void }) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось войти");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
   async function demo() {
     setError("");
-    setBusy(true);
+    setBusy("demo");
     try {
       onSession(await request<Session>("/api/auth/demo", { method: "POST" }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Учебный парк недоступен");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
   return (
-    <main className="login-shell">
+    <main className="login-shell" id="main-content">
       <section className="login-brand">
-        <div className="brand-mark">
-          <Trees size={27} />
+        <div className="login-wordmark">
+          <Trees size={24} aria-hidden="true" /> ИТлес{" "}
+          <span>Мониторинг лесозаготовки</span>
         </div>
-        <p className="eyebrow">ПРОИЗВОДСТВЕННАЯ ТЕЛЕМЕТРИЯ</p>
-        <h1>ИТлес</h1>
-        <p>
-          Карта, журнал и происхождение данных — без подмены измерений
-          прогнозами.
+        <div className="login-editorial">
+          <p className="eyebrow">От наблюдения — к решению</p>
+          <h1>
+            Ваш парк.
+            <br />
+            <span>В поле зрения.</span>
+          </h1>
+          <p>
+            Где техника, какие показания поступили и сколько древесины записано
+            в журнале.
+          </p>
+        </div>
+        <div className="login-index" aria-label="Возможности рабочей области">
+          <div>
+            <span>01</span>
+            <b>Машины и координаты</b>
+            <small>Последнее известное положение, не имитация движения</small>
+          </div>
+          <div>
+            <span>02</span>
+            <b>Выработка за период</b>
+            <small>Раздельный учёт с корой и без коры</small>
+          </div>
+          <div>
+            <span>03</span>
+            <b>Происхождение данных</b>
+            <small>Время, источник и методика каждого результата</small>
+          </div>
+        </div>
+        <p className="login-footnote">
+          Версия для проверки · OEM-оборудование и 1С пока не подключены
         </p>
-        <div className="login-note">
-          <ShieldCheck size={18} />
-          Вход по коду организации. Используйте только код и пароль организации;
-          не передавайте персональные данные в полях входа.
-        </div>
       </section>
       <section className="login-card" aria-labelledby="login-title">
-        <p className="eyebrow">ЗАЩИЩЁННЫЙ ДОСТУП</p>
-        <h2 id="login-title">Открыть свой парк</h2>
-        <form onSubmit={login}>
-          <label>
-            Код организации
-            <input
-              autoComplete="username"
-              required
-              minLength={2}
-              value={account}
-              onChange={(e) => setAccount(e.target.value)}
-              placeholder="Например: les-001"
-            />
-          </label>
-          <label>
-            Пароль
-            <input
-              autoComplete="current-password"
-              required
-              minLength={12}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Не менее 12 символов"
-            />
-          </label>
-          {error && (
-            <p className="form-error" role="alert">
-              {error}
-            </p>
+        <p className="eyebrow">Рабочая область</p>
+        <h2 id="login-title">
+          {demoAvailable ? (
+            <>
+              Посмотрите, как
+              <br />
+              устроен парк
+            </>
+          ) : (
+            "Вход в организацию"
           )}
-          <button className="button button--primary" disabled={busy}>
-            {busy ? "Проверяем…" : "Войти в организацию"}
-            <ChevronRight size={18} />
-          </button>
-        </form>
-        <div className="login-divider">
-          <span>или</span>
-        </div>
+        </h2>
+        <p className="login-intro">
+          {demoAvailable
+            ? "Начните с примера. Для учебного парка не нужны ни регистрация, ни пароль."
+            : "Используйте код и пароль, выданные администратором вашей организации."}
+        </p>
+        {(error || initialError) && (
+          <p className="form-error" role="alert">
+            {error || initialError}
+          </p>
+        )}
+        {demoAvailable ? (
+          <div className="demo-entry">
+            <div>
+              <span className="demo-label">Учебный парк</span>
+              <span>Вымышленные данные</span>
+            </div>
+            <p>
+              Откройте машину, проверьте показания и сопоставьте их с журналом
+              выработки.
+            </p>
+            <button
+              className="button button--primary"
+              disabled={busy !== null}
+              onClick={demo}
+            >
+              {busy === "demo" ? "Открываем парк…" : "Открыть учебный парк"}
+              <ArrowUpRight size={18} />
+            </button>
+          </div>
+        ) : (
+          <p className="access-note">
+            Учебный вход недоступен на этом сервере. Для работы нужен доступ
+            организации.
+          </p>
+        )}
         <button
-          className="button button--secondary"
-          disabled={busy}
-          onClick={demo}
+          type="button"
+          className="organization-toggle"
+          aria-expanded={organizationOpen}
+          aria-controls="organization-login"
+          onClick={() => setOrganizationOpen(!organizationOpen)}
         >
-          Открыть учебный парк <ChevronRight size={18} />
+          <span>Уже есть доступ организации?</span>
+          <ChevronRight size={18} />
         </button>
+        <div id="organization-login" hidden={!organizationOpen}>
+          <p className="access-note">
+            Код и пароль выдаёт администратор после создания организации. Эта
+            форма не регистрирует новый аккаунт.
+          </p>
+          <form onSubmit={login} aria-label="Вход в организацию">
+            <label>
+              Код организации
+              <input
+                autoComplete="username"
+                required
+                minLength={2}
+                value={account}
+                onChange={(e) => setAccount(e.target.value)}
+                placeholder="Код, выданный администратором"
+              />
+            </label>
+            <label className="password-label">
+              Пароль
+              <span className="password-field">
+                <input
+                  autoComplete="current-password"
+                  required
+                  minLength={12}
+                  type={passwordVisible ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Пароль организации"
+                />
+                <button
+                  type="button"
+                  className="password-toggle"
+                  aria-label={
+                    passwordVisible ? "Скрыть пароль" : "Показать пароль"
+                  }
+                  aria-pressed={passwordVisible}
+                  onClick={() => setPasswordVisible(!passwordVisible)}
+                >
+                  {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </span>
+            </label>
+            <button
+              className="button button--secondary"
+              disabled={busy !== null}
+            >
+              {busy === "organization" ? "Проверяем…" : "Войти в организацию"}
+              <ChevronRight size={18} />
+            </button>
+          </form>
+        </div>
         <p className="fine-print">
-          Учебный парк содержит демонстрационные записи и не подтверждает
-          подключение к технике.
+          В учебном парке можно проверить интерфейс и расчёты. Подключение к
+          реальному харвестеру он не подтверждает.
         </p>
       </section>
     </main>
@@ -499,11 +582,39 @@ function Login({ onSession }: { onSession: (session: Session) => void }) {
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [checked, setChecked] = useState(false);
+  const [demoAvailable, setDemoAvailable] = useState(false);
+  const [initialError, setInitialError] = useState("");
   useEffect(() => {
-    request<Session>("/api/auth/me")
-      .then(setSession)
-      .catch(() => null)
-      .finally(() => setChecked(true));
+    const controller = new AbortController();
+    const options = { signal: controller.signal };
+    const report = (error: unknown) => {
+      if (
+        !controller.signal.aborted &&
+        !(error instanceof ApiError && error.status === 401)
+      ) {
+        setInitialError(
+          error instanceof Error
+            ? error.message
+            : "Не удалось проверить доступность сервера.",
+        );
+      }
+    };
+    void Promise.all([
+      request<Session>("/api/auth/me", options)
+        .then((value) => {
+          if (!controller.signal.aborted) setSession(value);
+        })
+        .catch(report),
+      request<{ demo_enabled: boolean }>("/api/auth/options", options)
+        .then((value) => {
+          if (!controller.signal.aborted)
+            setDemoAvailable(value.demo_enabled === true);
+        })
+        .catch(report),
+    ]).finally(() => {
+      if (!controller.signal.aborted) setChecked(true);
+    });
+    return () => controller.abort();
   }, []);
   if (!checked)
     return (
@@ -515,7 +626,11 @@ export function App() {
   return session ? (
     <Workspace session={session} onLogout={() => setSession(null)} />
   ) : (
-    <Login onSession={setSession} />
+    <Login
+      onSession={setSession}
+      demoAvailable={demoAvailable}
+      initialError={initialError}
+    />
   );
 }
 
@@ -526,7 +641,7 @@ export function Workspace({
   session: Session;
   onLogout: () => void;
 }) {
-  const [view, setView] = useState<(typeof nav)[number][0]>("map");
+  const [view, setView] = useState<(typeof nav)[number][0]>("overview");
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [dates, setDates] = useState(() => initialDates(session));
@@ -549,6 +664,7 @@ export function Workspace({
   const sidebar = useRef<HTMLElement>(null);
   const isMobileNavigation = useMediaQuery("(max-width: 850px)");
   const validDates = hasValidDateRange(dates);
+  const hasPeriod = ["overview", "map", "fleet", "data"].includes(view);
   const query = `start=${encodeURIComponent(dates.start)}&end=${encodeURIComponent(dates.end)}`;
   const period = `${dates.start}:${dates.end}`;
 
@@ -575,6 +691,7 @@ export function Workspace({
       ++detailRequest.current;
       setDetail(null);
       setFleet(null);
+      setMachines([]);
       setLoadedPeriod(null);
 
       if (!hasValidDateRange(dates)) {
@@ -607,6 +724,10 @@ export function Workspace({
         setLoadedPeriod(period);
       } catch (err) {
         if (requestId !== loadRequest.current || isAbortError(err)) return;
+        if (err instanceof ApiError && err.status === 401) {
+          onLogout();
+          return;
+        }
         setError(
           err instanceof Error ? err.message : "Не удалось получить данные",
         );
@@ -616,7 +737,7 @@ export function Workspace({
         setRefreshing(false);
       }
     },
-    [dates, period, query],
+    [dates, period, query, onLogout],
   );
 
   useEffect(() => {
@@ -644,29 +765,37 @@ export function Workspace({
       })
       .catch((err) => {
         if (requestId !== detailRequest.current || isAbortError(err)) return;
+        if (err instanceof ApiError && err.status === 401) {
+          onLogout();
+          return;
+        }
         setError(
           err instanceof Error ? err.message : "Не удалось открыть машину",
         );
       });
     return () => controller.abort();
-  }, [loadedPeriod, period, query, selected, validDates]);
+  }, [loadedPeriod, period, query, selected, validDates, onLogout]);
 
   useEffect(() => {
     if (view !== "quality") return;
     const controller = new AbortController();
+    setQuality(null);
     request<Quality>("/api/quality", { signal: controller.signal })
       .then((payload) => {
         if (!controller.signal.aborted) setQuality(payload);
       })
-      .catch(
-        (err) =>
-          !controller.signal.aborted &&
-          setError(
-            err instanceof Error ? err.message : "Не удалось загрузить журнал",
-          ),
-      );
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        if (err instanceof ApiError && err.status === 401) {
+          onLogout();
+          return;
+        }
+        setError(
+          err instanceof Error ? err.message : "Не удалось загрузить журнал",
+        );
+      });
     return () => controller.abort();
-  }, [view, refreshVersion]);
+  }, [view, refreshVersion, onLogout]);
 
   useEffect(() => {
     const navigation = sidebar.current;
@@ -752,6 +881,9 @@ export function Workspace({
   }
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        К содержимому
+      </a>
       <aside
         ref={sidebar}
         id="main-navigation"
@@ -775,7 +907,7 @@ export function Workspace({
         </div>
         <div className="org-name">{session.organization.name}</div>
         <nav>
-          {nav.map(([id, label, Icon]) => (
+          {nav.map(([id, label, Icon], index) => (
             <button
               key={id}
               type="button"
@@ -788,13 +920,18 @@ export function Workspace({
             >
               <Icon size={18} />
               {label}
+              <span className="nav-number" aria-hidden="true">
+                0{index + 1}
+              </span>
             </button>
           ))}
         </nav>
         <div className="sidebar-foot">
           <div className="privacy">
             <ShieldCheck size={16} />
-            Технический контур: не вводите персональные данные
+            {session.demo
+              ? "Стенд для проверки. Не вводите реальные данные предприятия."
+              : "Не передавайте персональные данные в технических полях."}
           </div>
           <button
             className="logout"
@@ -815,7 +952,7 @@ export function Workspace({
           onClick={() => setOpen(false)}
         />
       )}
-      <main className="workspace">
+      <main className="workspace" id="main-content" tabIndex={-1}>
         <header className="topbar">
           <button
             className="icon-button menu-button"
@@ -830,10 +967,9 @@ export function Workspace({
           </button>
           <div>
             <p className="eyebrow">
-              {view === "map"
-                ? "ОПЕРАЦИОННАЯ КАРТА"
-                : "ИТЛЕС / " +
-                  nav.find((x) => x[0] === view)?.[1].toUpperCase()}
+              {session.demo
+                ? "Знакомство с системой"
+                : "Рабочая область организации"}
             </p>
             <h1>
               {view === "map"
@@ -841,41 +977,57 @@ export function Workspace({
                 : nav.find((x) => x[0] === view)?.[1]}
             </h1>
           </div>
-          {session.demo && <span className="demo-badge">Учебные данные</span>}
-          <div className="date-controls">
-            <CalendarDays size={17} />
-            <label>
-              с
-              <input
-                type="date"
-                aria-label="Дата начала периода"
-                value={dates.start}
-                max={dates.end}
-                onChange={(e) => changeDates("start", e.target.value)}
-              />
-            </label>
-            <label>
-              по
-              <input
-                type="date"
-                aria-label="Дата окончания периода"
-                value={dates.end}
-                min={dates.start}
-                onChange={(e) => changeDates("end", e.target.value)}
-              />
-            </label>
-          </div>
+          {hasPeriod && (
+            <div className="date-controls" aria-label="Период журнала, UTC">
+              <CalendarDays size={17} />
+              <label>
+                с
+                <input
+                  type="date"
+                  aria-label="Дата начала периода"
+                  value={dates.start}
+                  max={dates.end}
+                  onChange={(e) => changeDates("start", e.target.value)}
+                />
+              </label>
+              <label>
+                по
+                <input
+                  type="date"
+                  aria-label="Дата окончания периода"
+                  value={dates.end}
+                  min={dates.start}
+                  onChange={(e) => changeDates("end", e.target.value)}
+                />
+              </label>
+              <span className="date-timezone">UTC</span>
+            </div>
+          )}
           <button
             className="refresh"
             type="button"
             onClick={() => void load(true)}
-            disabled={refreshing || !validDates}
+            disabled={
+              refreshing || (hasPeriod && !validDates) || view === "docs"
+            }
           >
             <RefreshCw size={17} className={refreshing ? "spin" : ""} />
             Обновить
           </button>
         </header>
-        {!validDates && (
+        {session.demo && (
+          <div className="demo-banner">
+            <span className="demo-label">Учебный парк</span>
+            <p>
+              Вымышленные машины и записи. Даты сохранены; реальная техника не
+              подключена.
+            </p>
+            <button type="button" onClick={() => setView("data")}>
+              Что уже работает <ArrowUpRight size={15} />
+            </button>
+          </div>
+        )}
+        {!validDates && hasPeriod && (
           <div className="message message--error" role="alert">
             Укажите обе даты периода; дата окончания не может быть раньше даты
             начала.
@@ -894,7 +1046,7 @@ export function Workspace({
             </button>
           </div>
         )}
-        {loading ? (
+        {loading || refreshing ? (
           <div className="loading">Получаем журнал и состояние машин…</div>
         ) : (
           <View
@@ -907,6 +1059,7 @@ export function Workspace({
             onSelect={select}
             dates={dates}
             validDates={validDates}
+            onNavigate={setView}
           />
         )}
       </main>
@@ -927,7 +1080,9 @@ function View({
   onSelect: (id: string) => void;
   dates: { start: string; end: string };
   validDates: boolean;
+  onNavigate: (view: (typeof nav)[number][0]) => void;
 }) {
+  if (view === "overview") return <Overview {...props} />;
   if (view === "fleet") return <FleetView {...props} />;
   if (view === "quality") return <QualityView quality={props.quality} />;
   if (view === "data")
@@ -936,12 +1091,324 @@ function View({
   return <MapView {...props} />;
 }
 
+export function Overview({
+  machines,
+  fleet,
+  onSelect,
+  onNavigate,
+}: {
+  machines: Machine[];
+  fleet: Fleet | null;
+  onSelect: (id: string) => void;
+  onNavigate: (view: (typeof nav)[number][0]) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [ascending, setAscending] = useState(true);
+  const filtered = machines
+    .filter((machine) =>
+      `${machine.name} ${machine.model ?? ""}`
+        .toLocaleLowerCase("ru")
+        .includes(search.toLocaleLowerCase("ru")),
+    )
+    .sort((a, b) => a.name.localeCompare(b.name, "ru") * (ascending ? 1 : -1));
+  const attention = machines.filter(
+    (machine) =>
+      machine.connection_status !== "fresh" ||
+      machine.position?.status !== "fresh",
+  );
+  return (
+    <div className="content-page overview-page">
+      <div className="overview-lead">
+        <p>
+          Сначала общая картина.
+          <br />
+          <span>Затем — каждое наблюдение.</span>
+        </p>
+        <div className="fleet-census">
+          <b>{fleet ? machines.length : "—"}</b>
+          <span>
+            машин в парке
+            <br />
+            {fleet
+              ? `${machines.filter((m) => m.position).length} с координатами`
+              : "сводка не получена"}
+          </span>
+        </div>
+      </div>
+      <div className="overview-grid">
+        <section
+          className="production-summary"
+          aria-labelledby="production-summary-title"
+        >
+          <div className="section-heading">
+            <h2 id="production-summary-title">Записано в журнале</h2>
+            <span>За выбранный период</span>
+          </div>
+          {fleet?.totals.length ? (
+            <div className="production-values">
+              {fleet.totals.map((total) => (
+                <div className="production-value" key={total.basis}>
+                  <span>{basisName(total.basis)}</span>
+                  <p>
+                    <b>{volume(total.volume_m3)}</b> <span>м³</span>
+                  </p>
+                  <small>{recordCount(total.records)}</small>
+                  <ProvenanceNotice total={total} />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty>
+              {fleet
+                ? "За этот период нет записей выработки. Это не означает нулевую выработку машины."
+                : "Сводка не получена. Обновите данные после восстановления связи."}
+            </Empty>
+          )}
+          <div className="summary-footer">
+            <p>
+              Базы объёма считаются отдельно.
+              <br />
+              Суммы не подтверждают точность измерения.
+            </p>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onNavigate("fleet")}
+            >
+              Разобрать объём <ArrowUpRight size={17} />
+            </button>
+          </div>
+        </section>
+        <section className="attention-panel" aria-labelledby="attention-title">
+          <div className="section-heading">
+            <h2 id="attention-title">Проверить данные</h2>
+            <Clock3 size={18} />
+          </div>
+          <p>Свежесть сообщений, не состояние техники.</p>
+          {attention.length ? (
+            attention.map((machine) => (
+              <button
+                className="attention-row"
+                type="button"
+                onClick={() => onSelect(machine.id)}
+                key={machine.id}
+              >
+                <span>
+                  <b>{machine.name}</b>
+                  <small>
+                    {!machine.last_seen
+                      ? "Сообщения не поступали"
+                      : machine.connection_status === "invalid"
+                        ? "Сообщения требуют проверки"
+                        : machine.connection_status !== "fresh"
+                          ? "Последние сообщения устарели"
+                          : !machine.position
+                            ? "Координаты не поступали"
+                            : "Координаты устарели или требуют проверки"}
+                  </small>
+                </span>
+                <ArrowUpRight size={17} />
+              </button>
+            ))
+          ) : (
+            <p className="attention-empty">
+              {machines.length
+                ? "По всем машинам есть свежие сообщения и координаты. Исправность узлов этим не подтверждена."
+                : "Машины ещё не добавлены в организацию."}
+            </p>
+          )}
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => onNavigate("quality")}
+          >
+            Журнал приёма <ArrowUpRight size={17} />
+          </button>
+        </section>
+      </div>
+      <section className="table-card fleet-register">
+        <div className="section-title">
+          <div>
+            <p className="eyebrow">От общего — к машине</p>
+            <h2>Техника в парке</h2>
+          </div>
+          <label className="search-field">
+            <Search size={17} />
+            <input
+              type="search"
+              aria-label="Поиск машин"
+              placeholder="Найти машину"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+        </div>
+        <p className="table-note">
+          Последние показания — независимо от периода. Выработка — за выбранные
+          даты.
+        </p>
+        {filtered.length ? (
+          <div
+            className="table-scroll"
+            tabIndex={0}
+            role="region"
+            aria-label="Таблица машин"
+          >
+            <table>
+              <caption className="sr-only">
+                Машины, время последних сообщений и объём из журнала
+              </caption>
+              <thead>
+                <tr>
+                  <th
+                    scope="col"
+                    aria-sort={ascending ? "ascending" : "descending"}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setAscending(!ascending)}
+                    >
+                      Машина {ascending ? "↑" : "↓"}
+                    </button>
+                  </th>
+                  <th scope="col">Последнее сообщение</th>
+                  <th scope="col">Топливо</th>
+                  <th scope="col">Объём за период</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((machine) => {
+                  const fuel = machine.metrics.find(
+                    (metric) => metric.key === "fuel_level_pct",
+                  );
+                  const totals = fleet?.machines.find(
+                    (entry) => entry.id === machine.id,
+                  )?.totals;
+                  return (
+                    <tr key={machine.id}>
+                      <th scope="row">
+                        <button
+                          type="button"
+                          className="machine-link"
+                          onClick={() => onSelect(machine.id)}
+                        >
+                          <span>
+                            <b>{machine.name}</b>
+                            <small>
+                              {machine.model || "Модель не указана"}
+                            </small>
+                          </span>
+                          <ArrowUpRight size={16} />
+                        </button>
+                      </th>
+                      <td>
+                        <span>{displayDate(machine.last_seen)}</span>
+                        <StatusPill status={machine.connection_status} />
+                      </td>
+                      <td>
+                        {fuel?.value != null ? (
+                          <>
+                            <b>
+                              {metricValue(fuel)} {fuel.unit}
+                            </b>
+                            <StatusPill status={fuel.status} />
+                          </>
+                        ) : (
+                          <span className="muted">Нет данных</span>
+                        )}
+                      </td>
+                      <td>
+                        {totals?.length ? (
+                          totals.map((total) => (
+                            <span className="table-volume" key={total.basis}>
+                              <b>{volume(total.volume_m3)} м³</b>{" "}
+                              {basisName(total.basis)}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="muted">
+                            {fleet ? "Нет записей" : "Не получен"}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <Empty>
+            {search
+              ? "Машины не найдены. Измените запрос или очистите поиск."
+              : "В организации пока нет машин. Порядок подключения — в разделе «Передача данных»."}
+          </Empty>
+        )}
+        <div className="table-footer">
+          <span>
+            Показано {filtered.length} из {machines.length}
+          </span>
+          <button
+            className="text-button"
+            type="button"
+            onClick={() => onNavigate("map")}
+          >
+            Открыть карту <ArrowUpRight size={17} />
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FitMachineBounds({
+  machines,
+  reset,
+  selected,
+}: {
+  machines: Machine[];
+  reset: number;
+  selected: string | null;
+}) {
+  const map = useMap();
+  const positions = machines
+    .filter((machine) => machine.position)
+    .map(
+      (machine) =>
+        [
+          machine.position!.latitude,
+          machine.position!.longitude,
+        ] as L.LatLngTuple,
+    );
+  const coordinates = JSON.stringify(positions);
+  useEffect(() => {
+    const points = JSON.parse(coordinates) as L.LatLngTuple[];
+    if (points.length)
+      map.fitBounds(L.latLngBounds(points), {
+        padding: [60, 60],
+        maxZoom: 13,
+        animate: false,
+      });
+  }, [map, coordinates, reset]);
+  const selectedPosition = machines.find(
+    (machine) => machine.id === selected,
+  )?.position;
+  const latitude = selectedPosition?.latitude;
+  const longitude = selectedPosition?.longitude;
+  useEffect(() => {
+    if (latitude !== undefined && longitude !== undefined)
+      map.panTo([latitude, longitude], { animate: false });
+  }, [map, selected, latitude, longitude]);
+  return null;
+}
+
 function MapView({
   machines,
   detail,
   selected,
   onSelect,
 }: Omit<Parameters<typeof View>[0], "view" | "fleet" | "quality" | "dates">) {
+  const [reset, setReset] = useState(0);
   const positioned = machines.filter((m) => m.position);
   const center: L.LatLngTuple = positioned.length
     ? [
@@ -965,26 +1432,34 @@ function MapView({
           zoomControl={false}
           attributionControl={false}
         >
+          <FitMachineBounds
+            machines={machines}
+            reset={reset}
+            selected={selected}
+          />
+          <ZoomControl position="topright" />
           <GeoJSON
             data={naturalEarthRussiaRegion}
             style={{
-              color: "#75988b",
+              color: "var(--map-border)",
               weight: 1,
-              fillColor: "#cfddcc",
+              fillColor: "var(--map-land)",
               fillOpacity: 0.72,
             }}
           />
-          <div className="map-label map-label--north">
-            РОССИЯ И СОПРЕДЕЛЬНЫЕ ТЕРРИТОРИИ
-          </div>
+          <div className="map-label map-label--north">Обзорная карта</div>
           <div className="map-grid-note">
-            Карта работает без внешних тайлов. Показаны только координаты,
-            принятые системой.
+            Без дорог и лесных кварталов. Только принятые координаты; внешние
+            тайлы не загружаются.
           </div>
           {detail?.track && detail.track.length > 1 && (
             <Polyline
               positions={detail.track.map((p) => [p.latitude, p.longitude])}
-              pathOptions={{ color: "#78a99d", weight: 2, dashArray: "5 7" }}
+              pathOptions={{
+                color: "var(--map-border)",
+                weight: 2,
+                dashArray: "5 7",
+              }}
             />
           )}
           {positioned.map((machine) => (
@@ -993,14 +1468,21 @@ function MapView({
               center={[machine.position!.latitude, machine.position!.longitude]}
               radius={machine.id === selected ? 10 : 7}
               pathOptions={{
-                color: "#12342f",
-                fillColor: machine.id === selected ? "#eeac4a" : "#2e8170",
+                color: "var(--ink)",
+                fillColor:
+                  machine.id === selected ? "var(--accent)" : "var(--surface)",
                 fillOpacity: 1,
                 weight: 3,
               }}
               eventHandlers={{ click: () => onSelect(machine.id) }}
             >
-              <Tooltip direction="top" opacity={1}>
+              {/* Leaflet reads permanent only when creating the tooltip. */}
+              <Tooltip
+                key={String(machine.id === selected)}
+                direction="top"
+                opacity={1}
+                permanent={machine.id === selected}
+              >
                 {machine.name}
                 <br />
                 <small>
@@ -1011,6 +1493,19 @@ function MapView({
             </CircleMarker>
           ))}
         </MapContainer>
+        <button
+          className="map-reset"
+          type="button"
+          onClick={() => setReset((value) => value + 1)}
+        >
+          <LocateFixed size={16} />
+          Весь парк
+        </button>
+        {!positioned.length && (
+          <div className="map-empty">
+            Координаты ещё не поступали. Положение машин на карте не показано.
+          </div>
+        )}
         <div className="map-legend">
           <span>
             <i className="legend-dot" />
@@ -1031,7 +1526,7 @@ function MapView({
             <p className="eyebrow">ТЕХНИКА</p>
             <h2>{machines.length} ед.</h2>
           </div>
-          <span>Выберите на карте</span>
+          <span>Карта или список</span>
         </div>
         <p className="current-data-note">
           Текущие показатели и последняя позиция берутся из последних принятых
@@ -1046,6 +1541,7 @@ function MapView({
                 key={machine.id}
                 type="button"
                 className={`machine-row ${machine.id === selected ? "machine-row--selected" : ""}`}
+                aria-pressed={machine.id === selected}
                 onClick={() => onSelect(machine.id)}
               >
                 <span
@@ -1070,6 +1566,18 @@ function MapView({
   );
 }
 function MachineDetails({ detail }: { detail: MachineDetail }) {
+  const primaryKeys = [
+    "fuel_level_pct",
+    "engine_rpm",
+    "engine_oil_pressure_kpa",
+    "hydraulic_oil_temperature_c",
+  ];
+  const primary = detail.metrics.filter((metric) =>
+    primaryKeys.includes(metric.key),
+  );
+  const other = detail.metrics.filter(
+    (metric) => !primaryKeys.includes(metric.key),
+  );
   return (
     <section className="detail">
       <div className="detail-title">
@@ -1094,32 +1602,26 @@ function MachineDetails({ detail }: { detail: MachineDetail }) {
         </span>
       </div>
       <div className="metrics">
-        {detail.metrics.map((metric) => (
-          <div className="metric" key={metric.key}>
-            <div>
-              <span>{metric.label}</span>
-              <Explanation
-                label={metric.label}
-                text={metric.explanation}
-                norm={metric.norm}
-              />
-            </div>
-            <strong>
-              {metricValue(metric)}
-              <em>{metric.value !== null ? metric.unit : ""}</em>
-            </strong>
-            <footer>
-              <StatusPill status={metric.status} />
-              <small>
-                {metric.observed_at
-                  ? `наблюдение: ${displayDate(metric.observed_at)}`
-                  : "не поступал"}
-              </small>
-            </footer>
-            {!metric.norm && <p className="norm-note">Норма не подтверждена</p>}
-          </div>
+        {primary.map((metric) => (
+          <MetricReading metric={metric} key={metric.key} />
         ))}
       </div>
+      {other.length > 0 && (
+        <details className="other-metrics">
+          <summary>
+            Остальные показатели <span>{other.length}</span>
+          </summary>
+          <div className="metrics metrics--additional">
+            {other.map((metric) => (
+              <MetricReading metric={metric} key={metric.key} />
+            ))}
+          </div>
+        </details>
+      )}
+      <p className="norm-note">
+        Статус показывает свежесть наблюдения, не исправность узла. Заводские
+        нормы не подтверждены.
+      </p>
       <div className="volume-box">
         <div>
           <span>Объём за период</span>
@@ -1135,7 +1637,7 @@ function MachineDetails({ detail }: { detail: MachineDetail }) {
               <p>
                 <b>{volume(total.volume_m3)} м³</b>
                 <span>
-                  {basisName(total.basis)} · {total.records} записей
+                  {basisName(total.basis)} · {recordCount(total.records)}
                 </span>
               </p>
               <ProvenanceNotice total={total} />
@@ -1146,6 +1648,33 @@ function MachineDetails({ detail }: { detail: MachineDetail }) {
         )}
       </div>
     </section>
+  );
+}
+
+function MetricReading({ metric }: { metric: Metric }) {
+  return (
+    <div className="metric">
+      <div>
+        <span>{metric.label}</span>
+        <Explanation
+          label={metric.label}
+          text={metric.explanation}
+          norm={metric.norm}
+        />
+      </div>
+      <strong>
+        {metricValue(metric)}
+        <em>{metric.value !== null ? metric.unit : ""}</em>
+      </strong>
+      <footer>
+        <StatusPill status={metric.status} />
+        <small>
+          {metric.observed_at
+            ? displayDate(metric.observed_at)
+            : "Не поступало"}
+        </small>
+      </footer>
+    </div>
   );
 }
 
@@ -1180,22 +1709,35 @@ function ProvenanceNotice({ total }: { total: Total }) {
     methodIsUnknown ||
     versionIsUnknown ||
     total.warnings?.some((warning) => /неизвестн/i.test(warning));
-  if (!unknown) return null;
+  const warnings = [...new Set(total.warnings ?? [])];
+  if (!unknown && !warnings.length) return null;
   return (
-    <p className="provenance-warning">
-      <AlertTriangle size={13} />
-      Источник, метод или версия методики указаны не полностью. Запись остаётся
-      в журнале, но требует сверки перед интерпретацией результата.
-    </p>
+    <div className="provenance-warning">
+      {unknown && (
+        <p>
+          <AlertTriangle size={14} />
+          Источник, метод или версия методики указаны не полностью. Требуется
+          сверка.
+        </p>
+      )}
+      {warnings.map((warning) => (
+        <p key={warning}>
+          <AlertTriangle size={14} />
+          {warning}
+        </p>
+      ))}
+    </div>
   );
 }
 
 export function FleetView({
   fleet,
   machines,
+  onSelect,
 }: {
   fleet: Fleet | null;
   machines: Machine[];
+  onSelect?: (id: string) => void;
 }) {
   return (
     <div className="content-page">
@@ -1218,7 +1760,7 @@ export function FleetView({
                   <strong>
                     {volume(total.volume_m3)} <small>м³</small>
                   </strong>
-                  <span>{total.records} записей журнала</span>
+                  <span>{recordCount(total.records)} журнала</span>
                   <ProvenanceNotice total={total} />
                 </article>
               ))
@@ -1231,37 +1773,73 @@ export function FleetView({
               <div>
                 <p className="eyebrow">РАСШИФРОВКА ПАРКА</p>
                 <h2>
-                  {machines.length} машин · {fleet.record_count} записей
+                  {machines.length} машин · {recordCount(fleet.record_count)}
                 </h2>
               </div>
+              <a
+                className="text-button"
+                href={`/api/exports/ledger.csv?start=${encodeURIComponent(fleet.period.start)}&end=${encodeURIComponent(fleet.period.end)}`}
+              >
+                <Download size={17} />
+                Журнал CSV
+              </a>
             </div>
-            <div className="data-table">
-              <div className="table-head">
-                <span>Машина</span>
-                <span>Выработка</span>
-                <span>Изменение счётчика</span>
-              </div>
-              {fleet.machines.map((machine) => (
-                <div className="table-row" key={machine.id}>
-                  <span>
-                    <b>{machine.name}</b>
-                  </span>
-                  <span>
-                    {machine.totals.length
-                      ? machine.totals.map((x) => (
-                          <small key={x.basis}>
-                            {volume(x.volume_m3)} м³ · {basisName(x.basis)}
-                          </small>
-                        ))
-                      : "—"}
-                  </span>
-                  <span>
-                    {machine.engine_hours === null
-                      ? "недоступны"
-                      : `${machine.engine_hours.toLocaleString("ru-RU")} ч между наблюдениями`}
-                  </span>
-                </div>
-              ))}
+            <div
+              className="table-scroll"
+              tabIndex={0}
+              role="region"
+              aria-label="Расшифровка объёма по машинам"
+            >
+              <table>
+                <caption className="sr-only">
+                  Выработка и изменение счётчика наработки за выбранный период
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Машина</th>
+                    <th scope="col">Выработка</th>
+                    <th scope="col">Изменение счётчика</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fleet.machines.map((machine) => (
+                    <tr key={machine.id}>
+                      <th scope="row">
+                        {onSelect ? (
+                          <button
+                            className="machine-link"
+                            type="button"
+                            onClick={() => onSelect(machine.id)}
+                          >
+                            <b>{machine.name}</b>
+                            <ArrowUpRight size={16} />
+                          </button>
+                        ) : (
+                          machine.name
+                        )}
+                      </th>
+                      <td>
+                        {machine.totals.length
+                          ? machine.totals.map((x) => (
+                              <div key={x.basis}>
+                                <span className="table-volume">
+                                  <b>{volume(x.volume_m3)} м³</b>{" "}
+                                  {basisName(x.basis)}
+                                </span>
+                                <ProvenanceNotice total={x} />
+                              </div>
+                            ))
+                          : "Нет записей"}
+                      </td>
+                      <td>
+                        {machine.engine_hours === null
+                          ? "недоступны — недостаточно наблюдений или сброс счётчика"
+                          : `${machine.engine_hours.toLocaleString("ru-RU")} ч между наблюдениями`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
         </>
@@ -1312,22 +1890,40 @@ function QualityView({ quality }: { quality: Quality | null }) {
               </div>
             </div>
             {quality.recent.length ? (
-              <div className="data-table">
-                <div className="table-head">
-                  <span>Получено</span>
-                  <span>Статус</span>
-                  <span>Причина</span>
-                </div>
-                {quality.recent.map((item, index) => (
-                  <div
-                    className="table-row"
-                    key={`${item.received_at}-${index}`}
-                  >
-                    <span>{displayDate(item.received_at)}</span>
-                    <span>{item.status}</span>
-                    <span>{item.reason || "—"}</span>
-                  </div>
-                ))}
+              <div
+                className="table-scroll"
+                tabIndex={0}
+                role="region"
+                aria-label="Аудит доставки"
+              >
+                <table>
+                  <caption className="sr-only">
+                    Последние исходы приёма пакетов
+                  </caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Получено</th>
+                      <th scope="col">Статус</th>
+                      <th scope="col">Причина</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {quality.recent.map((item, index) => (
+                      <tr key={`${item.received_at}-${index}`}>
+                        <td>{displayDate(item.received_at)}</td>
+                        <td>
+                          {{
+                            accepted: "Принято",
+                            duplicate: "Повтор",
+                            duplicates: "Повтор",
+                            rejected: "Отклонено",
+                          }[item.status] ?? item.status}
+                        </td>
+                        <td>{item.reason || "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             ) : (
               <Empty>Приём пакетов ещё не зафиксирован.</Empty>
@@ -1364,11 +1960,28 @@ export function DataView({
         <Database size={27} />
         <div>
           <p className="eyebrow">КОНТУР ДАННЫХ</p>
-          <h2>
-            Нормализованный журнал, а не обещание универсальной интеграции
-          </h2>
+          <h2>Откуда берутся данные</h2>
         </div>
       </section>
+      <div className="readiness-grid">
+        <section>
+          <h3>Реализовано на стенде</h3>
+          <p>
+            API принимает нормализованные события, SQLite хранит записи,
+            интерфейс показывает показатели и раздельные суммы. Локальная
+            очередь повторяет доставку. Корректность проверяется синтетическими
+            тестами.
+          </p>
+        </section>
+        <section>
+          <h3>Ещё не подключено</h3>
+          <p>
+            Штатный компьютер реального харвестера, OEM/CAN/StanForD-адаптер и
+            конфигурация 1С заказчика. Для них нужны доступ, эталонные файлы и
+            отдельная проверка на технике.
+          </p>
+        </section>
+      </div>
       <article className="instruction">
         <h3>Что принимает система</h3>
         <p>
@@ -1409,7 +2022,7 @@ python -m edge.outbox flush \\
     "basis": "under_bark",
     "source": "onboard_measurement",
     "method": "harvester_onboard",
-    "method_version": "hpr-4.2"
+    "method_version": "synthetic-example-v1"
   }]
 }`}</code>
         </pre>
@@ -1464,8 +2077,9 @@ function Documents() {
     <div className="content-page narrow">
       <section className="intro">
         <p>
-          Материалы отделяют подтверждённые сведения от гипотез и полевых
-          проверок. Ссылки появляются только после получения списка с сервера.
+          Источники, методики расчёта и программа полевых испытаний. Документы
+          отделяют подтверждённые сведения от проектных решений и непроверенных
+          предположений.
         </p>
       </section>
       {error && (

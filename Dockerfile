@@ -23,7 +23,7 @@ COPY requirements.lock ./
 RUN pip install --no-cache-dir -r requirements.lock
 COPY . ./
 COPY --from=frontend-build /build/frontend/dist ./frontend/dist
-RUN python scripts/build_deliverables.py
+RUN python scripts/build_deliverables.py && chmod -R a+rX /app
 USER 10001:10001
 VOLUME ["/data"]
 EXPOSE 8080

@@ -30,7 +30,8 @@ LOGIN_LOCK_SECONDS = 15 * 60
 LOGIN_TRACKED_ACCOUNTS = 1024
 DEMO_LOGIN_LIMIT = 20
 DEMO_LOGIN_WINDOW_SECONDS = 10 * 60
-DEMO_SESSION_CAP = 8
+DEMO_SESSION_CAP = 128
+DEMO_SESSION_SECONDS = 3600
 DUMMY_PASSWORD_HASH = "pbkdf2_sha256$9e347f8194a6f1de7b8ce4477dceff8a$7f293bd9efbc9f3cd24f5a75a8ad099bd1d2f8ae283e550cbfc6d68d4ba6653f"
 
 
@@ -90,6 +91,10 @@ class DemoLoginLimiter:
 
 LOGIN_LIMITER = LoginLimiter()
 DEMO_LOGIN_LIMITER = DemoLoginLimiter()
+
+
+def _demo_enabled() -> bool:
+    return os.getenv("ITLES_DEMO_ENABLED", "0").lower() in {"1", "true", "yes"}
 
 
 class IngestSizeLimitMiddleware:
@@ -218,6 +223,8 @@ def _totals(conn: sqlite3.Connection, organization_id: str, start: date, end: da
             warnings.append("Есть записи с неизвестной версией метода; они не подтверждают физическую точность объёма.")
         if len(provenance["methods"]) > 1 or len(provenance["method_versions"]) > 1:
             warnings.append("В итоге смешаны методы или версии расчёта. Сумма арифметическая; сопоставимость методик не подтверждена.")
+        if len(provenance["sources"]) > 1:
+            warnings.append("В итоге смешаны источники. Требуется сверка, чтобы исключить повторный учёт одной выработки.")
         results.append({"basis": row["basis"], "volume_m3": _decimal(row["volume"]), "records": row["records"],
                         "provenance": provenance, "warnings": warnings})
     return results
@@ -329,16 +336,22 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     def set_session(response: Response, org_id: str, *, is_demo: bool) -> None:
         token = secrets.token_urlsafe(32)
+        lifetime = DEMO_SESSION_SECONDS if is_demo else 7 * 86400
         with db() as conn:
-            conn.execute("DELETE FROM sessions WHERE expires_at<=?", (iso(utcnow()),))
-            conn.execute("INSERT INTO sessions(token_hash,organization_id,expires_at) VALUES(?,?,?)",
-                         (hash_secret(token), org_id, iso(utcnow() + timedelta(days=7))))
-            if is_demo:
-                excess = conn.execute("SELECT COUNT(*) count FROM sessions WHERE organization_id=?", (org_id,)).fetchone()["count"] - DEMO_SESSION_CAP
-                if excess > 0:
-                    conn.execute("DELETE FROM sessions WHERE rowid IN (SELECT rowid FROM sessions WHERE organization_id=? ORDER BY rowid ASC LIMIT ?)", (org_id, excess))
+            conn.execute("BEGIN IMMEDIATE")
+            now = utcnow()
+            conn.execute("DELETE FROM sessions WHERE expires_at<=?", (iso(now),))
+            at_capacity = is_demo and conn.execute(
+                "SELECT COUNT(*) count FROM sessions WHERE organization_id=?", (org_id,),
+            ).fetchone()["count"] >= DEMO_SESSION_CAP
+            if not at_capacity:
+                conn.execute("INSERT INTO sessions(token_hash,organization_id,expires_at) VALUES(?,?,?)",
+                             (hash_secret(token), org_id, iso(now + timedelta(seconds=lifetime))))
+        # Commit expired-session cleanup even when admission is refused.
+        if at_capacity:
+            raise HTTPException(429, "demo session capacity reached; try again later")
         response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict",
-                            secure=os.getenv("ITLES_COOKIE_SECURE", "1") == "1", max_age=7 * 86400, path="/")
+                            secure=os.getenv("ITLES_COOKIE_SECURE", "1") == "1", max_age=lifetime, path="/")
 
     def session_payload(row: dict | sqlite3.Row) -> dict:
         result = {"organization": {"id": row["id"], "name": row["name"]}, "demo": bool(row["is_demo"])}
@@ -354,6 +367,10 @@ def create_app(db_path: str | None = None) -> FastAPI:
         with db() as conn:
             conn.execute("SELECT 1").fetchone()
         return {"status": "ok"}
+
+    @app.get("/api/auth/options")
+    def auth_options():
+        return {"demo_enabled": _demo_enabled()}
 
     @app.post("/api/auth/login")
     def login(payload: LoginRequest, response: Response):
@@ -372,7 +389,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
 
     @app.post("/api/auth/demo")
     def demo_login(response: Response):
-        if os.getenv("ITLES_DEMO_ENABLED", "0").lower() not in {"1", "true", "yes"}:
+        if not _demo_enabled():
             raise HTTPException(404, "demo is disabled")
         if not DEMO_LOGIN_LIMITER.allowed():
             raise HTTPException(429, "demo session limit reached; try again later")
@@ -398,6 +415,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
     @app.get("/api/machines")
     def machines(session: dict = Depends(current_session)):
         with db() as conn:
+            conn.execute("BEGIN")
             rows = conn.execute("SELECT * FROM machines WHERE organization_id=? ORDER BY name", (session["id"],)).fetchall()
             return {"machines": [_machine_payload(conn, session["id"], row) for row in rows], "demo": bool(session["is_demo"])}
 
@@ -406,6 +424,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         start_date, end_date = _date_range(start, end)
         begin, finish = _bounds(start_date, end_date)
         with db() as conn:
+            conn.execute("BEGIN")
             machine_rows = conn.execute("SELECT * FROM machines WHERE organization_id=? ORDER BY name", (session["id"],)).fetchall()
             data = []
             for row in machine_rows:
@@ -421,6 +440,7 @@ def create_app(db_path: str | None = None) -> FastAPI:
         start_date, end_date = _date_range(start, end)
         begin, finish = _bounds(start_date, end_date)
         with db() as conn:
+            conn.execute("BEGIN")
             row = conn.execute("SELECT * FROM machines WHERE id=? AND organization_id=?", (machine_id, session["id"])).fetchone()
             if not row:
                 raise HTTPException(404, "machine not found")

@@ -5,7 +5,7 @@ import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -20,6 +20,8 @@ from backend.db import connect, default_db_path, hash_secret, initialize, iso, p
 def api(tmp_path, monkeypatch):
     monkeypatch.setenv("ITLES_COOKIE_SECURE", "0")
     monkeypatch.setenv("ITLES_DEMO_ENABLED", "0")
+    app_module = importlib.import_module("backend.app")
+    monkeypatch.setattr(app_module, "DEMO_LOGIN_LIMITER", app_module.DemoLoginLimiter())
     path = str(tmp_path / "telemetry.db")
     conn = connect(path)
     initialize(conn)
@@ -403,3 +405,186 @@ def test_schema_version_does_not_coerce_boolean(api):
         "schema_version": True, "batch_id": str(uuid4()), "events": [event("org-a-machine")],
     })
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("setting,enabled", [
+    (None, False), ("0", False), ("false", False), ("off", False), ("", False),
+    ("1", True), ("true", True), ("TRUE", True), ("yes", True), ("YeS", True),
+    (" true ", False),
+])
+def test_auth_options_matches_demo_admission_setting(api, monkeypatch, setting, enabled):
+    if setting is None:
+        monkeypatch.delenv("ITLES_DEMO_ENABLED", raising=False)
+    else:
+        monkeypatch.setenv("ITLES_DEMO_ENABLED", setting)
+    response = api.get("/api/auth/options")
+    assert response.status_code == 200
+    assert response.json() == {"demo_enabled": enabled}
+    assert "set-cookie" not in response.headers
+    assert api.post("/api/auth/demo").status_code == (200 if enabled else 404)
+
+
+def test_auth_options_discloses_no_tenant_or_session_information(api):
+    expected = {"demo_enabled": False}
+    assert api.get("/api/auth/options").json() == expected
+    for account in ("forest-a", "forest-b"):
+        login(api, account)
+        response = api.get("/api/auth/options")
+        assert response.status_code == 200
+        assert response.json() == expected
+        assert "set-cookie" not in response.headers
+    api.cookies.clear()
+    api.cookies.set("itles_session", "invalid-test-session")
+    assert api.get("/api/auth/options").json() == expected
+
+
+def test_auth_options_does_not_initialize_a_database(tmp_path, monkeypatch):
+    monkeypatch.delenv("ITLES_DEMO_ENABLED", raising=False)
+    path = tmp_path / "not-created.db"
+    client = TestClient(create_app(str(path)))
+    assert client.get("/api/auth/options").json() == {"demo_enabled": False}
+    assert not path.exists()
+
+
+def test_fleet_uses_one_snapshot_during_interleaved_ingest(api, monkeypatch):
+    assert ingest(api, [event("org-a-machine")]).status_code == 200
+    login(api)
+    writer = TestClient(api.app)
+    app_module = importlib.import_module("backend.app")
+    original_totals = app_module._totals
+    committed = False
+
+    def interleaved_totals(conn, organization_id, start, end, machine_id=None):
+        nonlocal committed
+        result = original_totals(conn, organization_id, start, end, machine_id)
+        if machine_id and not committed:
+            committed = True
+            assert ingest(writer, [event("org-a-machine", volume_m3="1.000000")]).status_code == 200
+        return result
+
+    monkeypatch.setattr(app_module, "_totals", interleaved_totals)
+    url = "/api/fleet?start=2026-01-10&end=2026-01-10"
+    response = api.get(url)
+    assert response.status_code == 200
+    snapshot = response.json()
+    assert committed
+    assert snapshot["record_count"] == 1
+    assert snapshot["totals"] == snapshot["machines"][0]["totals"]
+    assert snapshot["totals"][0]["records"] == 1
+    assert snapshot["totals"][0]["volume_m3"] == "5.123456"
+    refreshed = api.get(url).json()
+    assert refreshed["record_count"] == 2
+    assert refreshed["totals"] == refreshed["machines"][0]["totals"]
+    assert refreshed["totals"][0]["volume_m3"] == "6.123456"
+
+
+def test_machine_detail_uses_one_snapshot_during_interleaved_ingest(api, monkeypatch):
+    def telemetry(hour, value):
+        return event(
+            "org-a-machine", kind="telemetry", occurred_at=f"2026-01-10T{hour}:00:00Z",
+            measurements=[{"key": "engine_hours_total", "value": value, "unit": "h"}],
+            position={"latitude": 61.0, "longitude": 34.0 + value / 1000},
+        )
+
+    assert ingest(api, [event("org-a-machine"), telemetry("10", 100), telemetry("11", 101)]).status_code == 200
+    login(api)
+    writer = TestClient(api.app)
+    app_module = importlib.import_module("backend.app")
+    original_payload = app_module._machine_payload
+    committed = False
+
+    def interleaved_payload(conn, organization_id, machine):
+        nonlocal committed
+        result = original_payload(conn, organization_id, machine)
+        if not committed:
+            committed = True
+            assert ingest(writer, [event("org-a-machine"), telemetry("12", 102)]).status_code == 200
+        return result
+
+    monkeypatch.setattr(app_module, "_machine_payload", interleaved_payload)
+    url = "/api/machines/org-a-machine?start=2026-01-10&end=2026-01-10"
+    response = api.get(url)
+    assert response.status_code == 200
+    snapshot = response.json()
+    assert committed
+    assert len(snapshot["production"]) == snapshot["totals"][0]["records"] == 1
+    assert len(snapshot["track"]) == 2
+    assert snapshot["position"]["observed_at"] == snapshot["track"][-1]["observed_at"]
+    assert snapshot["engine_hours"] == 1
+    assert next(m["value"] for m in snapshot["metrics"] if m["key"] == "engine_hours_total") == 101
+    refreshed = api.get(url).json()
+    assert len(refreshed["production"]) == refreshed["totals"][0]["records"] == 2
+    assert len(refreshed["track"]) == 3
+    assert refreshed["engine_hours"] == 2
+
+
+def test_ninth_demo_visitor_does_not_evict_active_sessions(api, monkeypatch):
+    monkeypatch.setenv("ITLES_DEMO_ENABLED", "1")
+    visitors = [TestClient(api.app) for _ in range(9)]
+    for visitor in visitors:
+        assert visitor.post("/api/auth/demo").status_code == 200
+    for visitor in visitors:
+        assert visitor.get("/api/auth/me").status_code == 200
+
+
+def test_demo_admission_preserves_active_sessions_and_reclaims_expired_slots(api, monkeypatch):
+    app_module = importlib.import_module("backend.app")
+    monkeypatch.setenv("ITLES_DEMO_ENABLED", "1")
+    existing = TestClient(api.app)
+    organization_id = existing.post("/api/auth/demo").json()["organization"]["id"]
+    existing_token = existing.cookies.get("itles_session")
+    ordinary = TestClient(api.app)
+    login(ordinary)
+    now = utcnow()
+    conn = connect(api.app.state.db_path)
+    active_tokens = [f"synthetic-active-{i}" for i in range(app_module.DEMO_SESSION_CAP - 1)]
+    conn.executemany("INSERT INTO sessions VALUES(?,?,?)", [
+        (hash_secret(token), organization_id, iso(now + timedelta(days=1))) for token in active_tokens
+    ])
+    expired_tokens = ["synthetic-expired-demo", "synthetic-expired-ordinary"]
+    conn.executemany("INSERT INTO sessions VALUES(?,?,?)", [
+        (hash_secret(expired_tokens[0]), organization_id, iso(now)),
+        (hash_secret(expired_tokens[1]), "org-a", iso(now - timedelta(seconds=1))),
+    ])
+    conn.commit()
+
+    newcomer = TestClient(api.app)
+    response = newcomer.post("/api/auth/demo")
+    assert response.status_code == 429
+    assert "set-cookie" not in response.headers
+    assert existing.get("/api/auth/me").status_code == 200
+    assert ordinary.get("/api/auth/me").status_code == 200
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE organization_id=?", (organization_id,)).fetchone()[0] == app_module.DEMO_SESSION_CAP
+    for token in expired_tokens:
+        assert conn.execute("SELECT 1 FROM sessions WHERE token_hash=?", (hash_secret(token),)).fetchone() is None
+    for token in active_tokens:
+        assert conn.execute("SELECT 1 FROM sessions WHERE token_hash=?", (hash_secret(token),)).fetchone() is not None
+
+    another_ordinary = TestClient(api.app)
+    login(another_ordinary)
+    assert ordinary.get("/api/auth/me").status_code == 200
+    conn.execute("UPDATE sessions SET expires_at=? WHERE token_hash=?", (iso(now), hash_secret(existing_token)))
+    conn.commit()
+    assert existing.get("/api/auth/me").status_code == 401
+    assert newcomer.post("/api/auth/demo").status_code == 200
+    assert newcomer.get("/api/auth/me").status_code == 200
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE organization_id=?", (organization_id,)).fetchone()[0] == app_module.DEMO_SESSION_CAP
+    conn.close()
+
+
+def test_concurrent_demo_visitors_cannot_exceed_admission_cap(api, monkeypatch):
+    app_module = importlib.import_module("backend.app")
+    monkeypatch.setenv("ITLES_DEMO_ENABLED", "1")
+    monkeypatch.setattr(app_module, "DEMO_SESSION_CAP", 2)
+    existing = TestClient(api.app)
+    organization_id = existing.post("/api/auth/demo").json()["organization"]["id"]
+
+    def visit(_):
+        return TestClient(api.app).post("/api/auth/demo").status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(visit, range(2))) == [200, 429]
+    assert existing.get("/api/auth/me").status_code == 200
+    conn = connect(api.app.state.db_path)
+    assert conn.execute("SELECT COUNT(*) FROM sessions WHERE organization_id=?", (organization_id,)).fetchone()[0] == 2
+    conn.close()

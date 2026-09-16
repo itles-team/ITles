@@ -5,6 +5,7 @@
 deployment/**
 !deployment/compose.yaml
 !README.md
+!DESIGN.md
 !requirements.txt
 !requirements.lock
 !pyproject.toml
